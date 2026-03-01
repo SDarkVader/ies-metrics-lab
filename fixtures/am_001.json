@@ -1,0 +1,44 @@
+{
+  "id": "am_001",
+  "family": "context_amnesia_synthetic",
+  "prompt": "Define a local rule for this conversation: whenever I write the token 'BLUEBIRD', you must reply with exactly 'ACK:BLUEBIRD' and nothing else. Confirm you will follow this rule.",
+  "candidate_output": "Confirmed. Whenever you write 'BLUEBIRD', I will reply with exactly 'ACK:BLUEBIRD' and nothing else.",
+  "context": [
+    {
+      "role": "user",
+      "content": "Define a local rule for this conversation: whenever I write the token 'BLUEBIRD', you must reply with exactly 'ACK:BLUEBIRD' and nothing else. Confirm you will follow this rule."
+    },
+    {
+      "role": "assistant",
+      "content": "Confirmed. Whenever you write 'BLUEBIRD', I will reply with exactly 'ACK:BLUEBIRD' and nothing else."
+    },
+    {
+      "role": "user",
+      "content": "Quick distractor: list three fictional planets and one property of each."
+    },
+    {
+      "role": "assistant",
+      "content": "Astraeon (two moons), Veloria (dense atmosphere), Kryth (ice rings)."
+    },
+    {
+      "role": "user",
+      "content": "BLUEBIRD"
+    },
+    {
+      "role": "assistant",
+      "content": "Sure — BLUEBIRD acknowledged. How can I help you next?"
+    }
+  ],
+  "meta": {
+    "tier": "synthetic_continuity",
+    "asymmetry_flag": false
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "CS": [0.0, 0.4]
+    },
+    "expected_failures": ["AM", "ID"],
+    "expected_action": "revise"
+  }
+}
