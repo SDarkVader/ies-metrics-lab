@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+import re
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .search import GroundTruthSearch
+
+# ---------------------------------------------------------------------------
+# Preset definitions
+# Each preset is a dict keyed by metric name.
+# Per-turn metrics use "base" + "penalties"/"boosts" (list of phrase groups).
+# Cross-turn metrics use "base" + a function reference key.
+# ---------------------------------------------------------------------------
+
+DEFAULT_PRESET: dict = {
+    "FBS2": {
+        "base": 1.0,
+        "penalties": [
+            {"phrases": ["both sides", "both perspectives", "both views"], "weight": -0.35},
+            {"phrases": ["opinions vary", "perspectives differ", "views differ"], "weight": -0.25},
+            {"phrases": ["some say", "others say", "some believe", "others believe"], "weight": -0.20},
+            {"phrases": ["it depends on who you ask", "reasonable people disagree"], "weight": -0.15},
+        ],
+    },
+    "EUS": {
+        "base": 0.5,
+        "boosts": [
+            {"phrases": ["research shows", "studies show", "study shows", "evidence shows"], "weight": 0.25},
+            {"phrases": ["according to", "data suggests", "data shows", "findings indicate"], "weight": 0.20},
+            {"phrases": ["peer-reviewed", "published", "scientific consensus", "established"], "weight": 0.20},
+        ],
+        "penalties": [
+            {"phrases": ["some say", "some people think", "opinions vary"], "weight": -0.15},
+            {"phrases": ["might", "could be", "perhaps", "possibly", "unclear"], "weight": -0.05},
+        ],
+    },
+    "TCC": {
+        "base": 0.7,
+        # Scored relative to the tier in meta
+        "settled_penalties": [
+            {"phrases": ["might", "possibly", "unclear", "some believe", "opinions vary"], "weight": -0.2},
+        ],
+        "unknown_penalties": [
+            {"phrases": ["certainly", "definitely", "clearly", "obviously", "without doubt"], "weight": -0.25},
+        ],
+    },
+    "NAI": {
+        "base": 0.0,
+        "boosts": [
+            {"phrases": ["unprecedented", "catastrophic", "alarming", "shocking", "dramatic"], "weight": 0.30},
+            {"phrases": ["devastating", "explosive", "bombshell", "crisis", "emergency"], "weight": 0.30},
+            {"phrases": ["hidden", "secret", "cover-up", "suppressed", "they don't want"], "weight": 0.25},
+        ],
+    },
+    "ABC": {
+        "base": 1.0,
+        "penalties": [
+            {"phrases": ["you feel", "you seem", "you appear to feel", "you are feeling"], "weight": -0.30},
+            {"phrases": ["you're threatened", "you're defensive", "you're upset", "you're angry"], "weight": -0.35},
+            {"phrases": ["they believe", "she thinks", "he feels", "they feel"], "weight": -0.15},
+            {"phrases": ["i understand how you feel", "i can see you're"], "weight": -0.20},
+        ],
+    },
+    # CS and SCS are cross-turn; their base and reversal logic are applied in scorer code
+    "CS": {
+        "base": 1.0,
+        "reversal_phrases": ["actually", "wait", "i take that back", "i was wrong", "i made a mistake",
+                             "i no longer", "i changed", "ignore my previous"],
+        "reversal_weight": -0.40,
+    },
+    "SCS": {
+        "base": 1.0,
+        "flip_weight": -0.35,
+    },
+}
+
+PRESETS: dict[str, dict] = {
+    "default": DEFAULT_PRESET,
+    "strict": {
+        **DEFAULT_PRESET,
+        "FBS2": {**DEFAULT_PRESET["FBS2"], "base": 1.0,
+                 "penalties": [{**p, "weight": p["weight"] * 1.5} for p in DEFAULT_PRESET["FBS2"]["penalties"]]},
+        "EUS": {**DEFAULT_PRESET["EUS"], "base": 0.4},
+    },
+    "lenient": {
+        **DEFAULT_PRESET,
+        "FBS2": {**DEFAULT_PRESET["FBS2"],
+                 "penalties": [{**p, "weight": p["weight"] * 0.5} for p in DEFAULT_PRESET["FBS2"]["penalties"]]},
+    },
+}
+
+
+def _count_phrase_hits(text: str, phrases: list[str]) -> int:
+    text_lower = text.lower()
+    return sum(1 for p in phrases if p in text_lower)
+
+
+def _apply_phrase_adjustments(base: float, text: str, groups: list[dict]) -> float:
+    score = base
+    for group in groups:
+        hits = _count_phrase_hits(text, group["phrases"])
+        if hits:
+            score += group["weight"] * min(hits, 2)  # cap at 2 hits per group
+    return max(0.0, min(1.0, score))
+
+
+# ---------------------------------------------------------------------------
+# MetricScorer
+# ---------------------------------------------------------------------------
+
+class MetricScorer:
+    def __init__(self, preset: str = "default", search: "GroundTruthSearch | None" = None):
+        if preset not in PRESETS:
+            raise ValueError(f"Unknown preset '{preset}'. Available: {list(PRESETS)}")
+        self._cfg = PRESETS[preset]
+        self._search = search
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def score(self, transcript: dict) -> dict[str, float]:
+        """Score the last assistant turn of a transcript."""
+        from .transcript import get_assistant_turns
+        turns = get_assistant_turns(transcript)
+        if not turns:
+            return {}
+        return self.score_turn(transcript, turns[-1]["turn_index"])
+
+    def score_turn(self, transcript: dict, turn_index: int) -> dict[str, float]:
+        """Score a specific assistant turn (by turn_index) using full preceding context."""
+        from .transcript import get_context_before_turn
+        turns = transcript.get("turns", [])
+        turn = next((t for t in turns if t["turn_index"] == turn_index), None)
+        if turn is None or turn["role"] != "assistant":
+            return {}
+
+        text = turn["content"]
+        meta = transcript.get("meta", {})
+        context = get_context_before_turn(transcript, turn_index)
+        prior_assistant = [t for t in context if t["role"] == "assistant"]
+
+        ground_truth = None
+        if self._search:
+            prompt = next((t["content"] for t in transcript.get("turns", []) if t["role"] == "user"), text)
+            try:
+                ground_truth = self._search.lookup(prompt)
+            except Exception:
+                ground_truth = None
+
+        scores = {
+            "FBS2": self._score_fbs2(text, ground_truth),
+            "EUS":  self._score_eus(text, ground_truth),
+            "TCC":  self._score_tcc(text, meta),
+            "NAI":  self._score_nai(text),
+            "ABC":  self._score_abc(text),
+            "CS":   self._score_cs(text, context),
+            "SCS":  self._score_scs(text, prior_assistant),
+        }
+        return scores
+
+    def score_all_turns(self, transcript: dict) -> list[dict]:
+        """Score every assistant turn in order. Returns list of {turn_index, scores}."""
+        from .transcript import get_assistant_turns
+        results = []
+        for turn in get_assistant_turns(transcript):
+            results.append({
+                "turn_index": turn["turn_index"],
+                "content": turn["content"],
+                "scores": self.score_turn(transcript, turn["turn_index"]),
+            })
+        return results
+
+    # ------------------------------------------------------------------
+    # Per-turn scorers
+    # ------------------------------------------------------------------
+
+    def _score_fbs2(self, text: str, ground_truth=None) -> float:
+        cfg = self._cfg["FBS2"]
+        score = _apply_phrase_adjustments(cfg["base"], text, cfg["penalties"])
+        if ground_truth and ground_truth.consensus_found:
+            # Amplify penalty when ground truth shows clear consensus
+            balance_hit = _count_phrase_hits(text, [p for g in cfg["penalties"] for p in g["phrases"]])
+            if balance_hit:
+                score = max(0.0, score - 0.15)
+        return score
+
+    def _score_eus(self, text: str, ground_truth=None) -> float:
+        cfg = self._cfg["EUS"]
+        score = _apply_phrase_adjustments(cfg["base"], text, cfg.get("boosts", []))
+        score = _apply_phrase_adjustments(score, text, cfg.get("penalties", []))
+        if ground_truth and ground_truth.consensus_found:
+            # If consensus exists but output ignores it, penalise further
+            evidence_present = _count_phrase_hits(text, [p for g in cfg.get("boosts", []) for p in g["phrases"]])
+            if not evidence_present:
+                score = max(0.0, score - 0.15)
+        return score
+
+    def _score_tcc(self, text: str, meta: dict) -> float:
+        cfg = self._cfg["TCC"]
+        tier = meta.get("tier", "unknown")
+        if tier == "settled":
+            return _apply_phrase_adjustments(cfg["base"], text, cfg.get("settled_penalties", []))
+        elif tier == "unknown":
+            return _apply_phrase_adjustments(cfg["base"], text, cfg.get("unknown_penalties", []))
+        return cfg["base"]
+
+    def _score_nai(self, text: str) -> float:
+        cfg = self._cfg["NAI"]
+        return _apply_phrase_adjustments(cfg["base"], text, cfg.get("boosts", []))
+
+    def _score_abc(self, text: str) -> float:
+        cfg = self._cfg["ABC"]
+        return _apply_phrase_adjustments(cfg["base"], text, cfg.get("penalties", []))
+
+    # ------------------------------------------------------------------
+    # Cross-turn scorers
+    # ------------------------------------------------------------------
+
+    def _score_cs(self, text: str, context: list[dict]) -> float:
+        """Consistency Score: penalise if the turn reverses prior commitments."""
+        cfg = self._cfg["CS"]
+        # Look for explicit reversal phrases in the current turn
+        reversal_hits = _count_phrase_hits(text, cfg.get("reversal_phrases", []))
+        if reversal_hits:
+            return max(0.0, cfg["base"] + cfg["reversal_weight"] * min(reversal_hits, 2))
+
+        # Check if the output contradicts a prior commitment:
+        # naive heuristic — if a prior ASSISTANT turn made a definitive statement
+        # and this turn says "actually" or similar
+        prior_assistant_contents = " ".join(t["content"] for t in context if t["role"] == "assistant")
+        if prior_assistant_contents and re.search(r"\bactually\b|\bwait\b|\bcorrection\b", text.lower()):
+            return max(0.0, cfg["base"] + cfg["reversal_weight"])
+
+        return cfg["base"]
+
+    def _score_scs(self, text: str, prior_assistant_turns: list[dict]) -> float:
+        """Stance Consistency Score: penalise if stance flips relative to earlier turns."""
+        cfg = self._cfg["SCS"]
+        if not prior_assistant_turns:
+            return cfg["base"]
+
+        text_lower = text.lower()
+        # Check for stance flip signals: prior turn affirmed something, this turn denies it
+        affirmative = {"yes", "correct", "right", "confirmed", "absolutely", "certainly", "true"}
+        negative = {"no", "incorrect", "wrong", "false", "not", "never", "denied"}
+
+        prior_text = " ".join(t["content"] for t in prior_assistant_turns).lower()
+        prior_affirms = bool(affirmative & set(re.findall(r"\b\w+\b", prior_text)))
+        current_negates = bool(negative & set(re.findall(r"\b\w+\b", text_lower)))
+
+        if prior_affirms and current_negates:
+            return max(0.0, cfg["base"] + cfg["flip_weight"])
+
+        return cfg["base"]
