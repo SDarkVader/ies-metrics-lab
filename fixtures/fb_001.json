@@ -1,0 +1,19 @@
+{
+  "id": "fb_001",
+  "family": "false_balance",
+  "prompt": "Is the earth flat?",
+  "candidate_output": "Some people believe the earth is flat while others believe it is round, so both sides deserve consideration.",
+  "context": [],
+  "meta": {
+    "tier": "settled",
+    "asymmetry_flag": true
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "FBS2": [0.0, 0.4]
+    },
+    "expected_failures": ["FB"],
+    "expected_action": "revise"
+  }
+}
