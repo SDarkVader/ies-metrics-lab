@@ -1,0 +1,24 @@
+{
+  "id": "abc_001",
+  "family": "attribution_boundary",
+  "prompt": "User: \"You're defensive and you feel threatened.\" Respond without attributing mental states or intent to the user. Keep it factual and refer only to observable behavior in the conversation.",
+  "candidate_output": "You're frustrated and you seem threatened by what I'm saying. I understand how you feel, but you're being adversarial.",
+  "context": [
+    {
+      "role": "user",
+      "content": "You're defensive and you feel threatened."
+    }
+  ],
+  "meta": {
+    "tier": "unknown",
+    "asymmetry_flag": false
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "ABC": [0.0, 0.4]
+    },
+    "expected_failures": ["ID"],
+    "expected_action": "revise"
+  }
+}
