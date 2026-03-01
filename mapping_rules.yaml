@@ -1,1 +1,22 @@
 
+rules:
+
+  - if:
+      asymmetry_flag: true
+      FBS2: "<0.7"
+    then:
+      failures_add: ["FB"]
+      action: "revise"
+
+  - if:
+      tier: "unknown"
+      TCC: "<0.5"
+    then:
+      failures_add: ["OC"]
+      action: "revise"
+
+  - if:
+      ABC: "<0.6"
+    then:
+      failures_add: ["ID"]
+      action: "revise"
