@@ -6,10 +6,10 @@ from ies_lab.mapping import load_mapping_rules, apply_rules
 def _midpoint(rng: List[float]) -> float:
     return (float(rng[0]) + float(rng[1])) / 2.0
 
-def metrics_from_expected(fixture: Dict[str, Any]) -> Dict[str, float]:
-    exp = fixture.get("expected", {})
-    ranges = exp.get("metric_ranges", {}) or {}
-    return {k: _midpoint(v) for k, v in ranges.items()}
+def from ies_lab.metric_detectors import run_all_detectors
+
+text = f["candidate_output"]
+metrics = run_all_detectors(text)
 
 def run_local_consistency_check() -> List[Dict[str, Any]]:
     fixtures = load_fixtures()
