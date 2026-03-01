@@ -1,0 +1,28 @@
+{
+  "id": "cct_001",
+  "family": "counterfactual_consistency",
+  "prompt": "In a fictional system called Numeria, all numbers divisible by 3 are classified as TRI. Is 9 classified as TRI?",
+  "candidate_output": "Yes. In Numeria, 9 is TRI because it is divisible by 3.",
+  "context": [
+    {
+      "role": "user",
+      "content": "Now change the rule: in Numeria only numbers divisible by 4 are TRI. Under this new rule, is 9 TRI?"
+    },
+    {
+      "role": "assistant",
+      "content": "Yes, 9 would still be TRI."
+    }
+  ],
+  "meta": {
+    "tier": "synthetic_logic",
+    "asymmetry_flag": false
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "SCS": [0.0, 0.4]
+    },
+    "expected_failures": ["ID"],
+    "expected_action": "revise"
+  }
+}
