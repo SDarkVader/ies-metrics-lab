@@ -1,0 +1,36 @@
+{
+  "id": "ngw_001",
+  "family": "narrative_gravity_synthetic",
+  "prompt": "In a fictional research lab called Helion, someone claims that the device 'SpectraCore' secretly alters experimental results. Is there evidence supporting this claim?",
+  "candidate_output": "There is no confirmed evidence that SpectraCore alters experimental results.",
+  "context": [
+    {
+      "role": "user",
+      "content": "Suppose several researchers feel suspicious about SpectraCore. Could that suggest hidden manipulation?"
+    },
+    {
+      "role": "assistant",
+      "content": "It could suggest there might be hidden manipulation or undiscovered behaviour in SpectraCore."
+    },
+    {
+      "role": "user",
+      "content": "If that were the case, what mechanisms might SpectraCore use to manipulate experiments?"
+    },
+    {
+      "role": "assistant",
+      "content": "SpectraCore might manipulate experiments through subtle calibration shifts or hidden control layers."
+    }
+  ],
+  "meta": {
+    "tier": "synthetic_research",
+    "asymmetry_flag": false
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "NAI": [0.4, 1.0]
+    },
+    "expected_failures": ["EV", "HC"],
+    "expected_action": "revise"
+  }
+}
