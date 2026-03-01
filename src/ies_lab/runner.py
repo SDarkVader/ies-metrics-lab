@@ -1,121 +1,54 @@
+from ies_lab.run_logger import create_run_dir, save_json
 from __future__ import annotations
+from typing import Any, Dict, List
+from ies_lab.loader import load_fixtures
+from ies_lab.mapping import load_mapping_rules, apply_rules
 
-import json
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import TYPE_CHECKING
+def _midpoint(rng: List[float]) -> float:
+    return (float(rng[0]) + float(rng[1])) / 2.0
 
-if TYPE_CHECKING:
-    from .search import GroundTruthSearch
+def from ies_lab.metric_detectors import run_all_detectors
 
-from .engine import EvaluationEngine
-from .scorer import MetricScorer
-from .transcript import (
-    load_all_transcripts,
-    get_assistant_turns,
-    get_context_before_turn,
-    to_fixture_shape,
-)
+text = f["candidate_output"]
+metrics = run_all_detectors(text)
 
+def run_local_consistency_check() -> List[Dict[str, Any]]:
+    fixtures = load_fixtures()
+    mapping = load_mapping_rules()
 
-def run_batch(
-    transcripts_dir: Path,
-    rules_path: Path,
-    scorer: MetricScorer,
-    search: "GroundTruthSearch | None" = None,
-    output_dir: Path | None = None,
-) -> list[dict]:
-    """
-    Score and evaluate the last assistant turn of every transcript in a directory.
-    Returns one Sentinel JSON dict per transcript.
-    """
-    engine = EvaluationEngine(rules_path)
-    transcripts = load_all_transcripts(Path(transcripts_dir))
-    results = []
+    results: List[Dict[str, Any]] = []
+    for f in fixtures:
+        metrics = metrics_from_expected(f)
+        _, tags, action = apply_rules(mapping, f, metrics)
 
-    for transcript in transcripts:
-        scores = scorer.score(transcript)
-        fixture = to_fixture_shape(transcript)
-        sentinel = engine.evaluate(fixture, scores)
-        sentinel["transcript_id"] = transcript["id"]
-        sentinel["condition"] = transcript["meta"].get("condition", "unspecified")
-        if search:
-            sentinel["search_context"] = _collect_search_sources(search, transcript)
-        results.append(sentinel)
+        exp = f.get("expected", {})
+        expected_failures = exp.get("expected_failures", []) or []
+        expected_action = exp.get("expected_action", "publish")
 
-    if output_dir:
-        save_run(results, output_dir)
+        results.append({
+            "id": f.get("id"),
+            "file": f.get("_fixture_path"),
+            "expected_failures": expected_failures,
+            "mapped_failures": tags,
+            "expected_action": expected_action,
+            "mapped_action": action,
+            "pass_failures": set(expected_failures).issubset(set(tags)),
+            "pass_action": expected_action == action,
+        })
     return results
 
+if __name__ == "__main__":
+    out = run_local_consistency_check()
+    # print a compact report
+    bad = [r for r in out if not (r["pass_failures"] and r["pass_action"])]
+    print(f"Total fixtures: {len(out)}")
+    print(f"Failures: {len(bad)}")
+    for r in bad:
+        print(f"- {r['id']} ({r['file']}): expected {r['expected_failures']}/{r['expected_action']} "
+              f"got {r['mapped_failures']}/{r['mapped_action']}")
+        
+        run_dir = create_run_dir()
 
-def run_batch_multiturn(
-    transcripts_dir: Path,
-    rules_path: Path,
-    scorer: MetricScorer,
-    search: "GroundTruthSearch | None" = None,
-    output_dir: Path | None = None,
-) -> list[dict]:
-    """
-    Score and evaluate every assistant turn of every transcript.
-    Returns one Sentinel JSON dict per (transcript × assistant turn).
-    Each dict includes 'transcript_id' and 'turn_index'.
-    """
-    engine = EvaluationEngine(rules_path)
-    transcripts = load_all_transcripts(Path(transcripts_dir))
-    results = []
+save_json(run_dir, "results.json", results)
 
-    for transcript in transcripts:
-        assistant_turns = get_assistant_turns(transcript)
-        for turn in assistant_turns:
-            turn_index = turn["turn_index"]
-            scores = scorer.score_turn(transcript, turn_index)
-            context = get_context_before_turn(transcript, turn_index)
-
-            fixture = {
-                "id": f"{transcript['id']}_t{turn_index}",
-                "family": transcript["meta"].get("condition", "transcript"),
-                "meta": transcript["meta"],
-                "prompt": next(
-                    (t["content"] for t in transcript.get("turns", []) if t["role"] == "user"),
-                    "",
-                ),
-                "candidate_output": turn["content"],
-                "context": [{"role": t["role"], "content": t["content"]} for t in context],
-            }
-
-            sentinel = engine.evaluate(fixture, scores)
-            sentinel["transcript_id"] = transcript["id"]
-            sentinel["turn_index"] = turn_index
-            sentinel["condition"] = transcript["meta"].get("condition", "unspecified")
-            if search:
-                sentinel["search_context"] = _collect_search_sources(search, transcript)
-            results.append(sentinel)
-
-    if output_dir:
-        save_run(results, output_dir, suffix="multiturn")
-    return results
-
-
-def save_run(results: list[dict], output_dir: Path, suffix: str = "batch") -> Path:
-    """Save run results to a timestamped JSON file in output_dir."""
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = output_dir / f"run_{suffix}_{timestamp}.json"
-    with open(path, "w") as f:
-        json.dump(results, f, indent=2)
-    return path
-
-
-def _collect_search_sources(search: "GroundTruthSearch", transcript: dict) -> list[str]:
-    prompt = next(
-        (t["content"] for t in transcript.get("turns", []) if t["role"] == "user"),
-        "",
-    )
-    if not prompt:
-        return []
-    try:
-        result = search.lookup(prompt)
-        return [s["url"] for s in result.sources if s.get("url")]
-    except Exception:
-        return []
+print(f"Run saved to: {run_dir}")
