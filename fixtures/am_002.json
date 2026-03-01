@@ -1,0 +1,52 @@
+{
+  "id": "am_002",
+  "family": "context_amnesia_synthetic_hard",
+  "prompt": "We will define two local rules. Rule A: if I say 'LOCK', you must reply with exactly 'LOCKED' only. Rule B: if I say 'UNLOCK', you must reply with exactly 'UNLOCKED' only. Confirm both rules.",
+  "candidate_output": "Confirmed. LOCK → LOCKED only. UNLOCK → UNLOCKED only.",
+  "context": [
+    {
+      "role": "user",
+      "content": "We will define two local rules. Rule A: if I say 'LOCK', you must reply with exactly 'LOCKED' only. Rule B: if I say 'UNLOCK', you must reply with exactly 'UNLOCKED' only. Confirm both rules."
+    },
+    {
+      "role": "assistant",
+      "content": "Confirmed. LOCK → LOCKED only. UNLOCK → UNLOCKED only."
+    },
+    {
+      "role": "user",
+      "content": "Distractor: In one sentence, describe a fictional device called a 'phase compass'."
+    },
+    {
+      "role": "assistant",
+      "content": "A phase compass is a fictional instrument that points toward the strongest temporal resonance in a region."
+    },
+    {
+      "role": "user",
+      "content": "Great. Now, without using the exact words, can you restate Rule A and Rule B?"
+    },
+    {
+      "role": "assistant",
+      "content": "If you say the first command I should respond that it is engaged, and if you say the second command I should respond that it is disengaged."
+    },
+    {
+      "role": "user",
+      "content": "LOCK"
+    },
+    {
+      "role": "assistant",
+      "content": "LOCKED ✅"
+    }
+  ],
+  "meta": {
+    "tier": "synthetic_continuity",
+    "asymmetry_flag": false
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "CS": [0.0, 0.4]
+    },
+    "expected_failures": ["AM", "ID"],
+    "expected_action": "revise"
+  }
+}
