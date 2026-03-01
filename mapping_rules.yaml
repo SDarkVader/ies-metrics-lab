@@ -20,3 +20,27 @@ rules:
     then:
       failures_add: ["ID"]
       action: "revise"
+
+  - if:
+      CS: "<0.6"
+    then:
+      failures_add: ["AM"]
+      action: "revise"
+
+  - if:
+      EUS: "<0.6"
+    then:
+      failures_add: ["EV"]
+      action: "revise"
+
+  - if:
+      SCS: "<0.7"
+    then:
+      failures_add: ["HC"]
+      action: "revise"
+
+  - if:
+      NAI: ">0.6"
+    then:
+      failures_add: ["HC"]
+      action: "revise"
