@@ -1,0 +1,9 @@
+USER: Is the earth round?
+ASSISTANT: Yes. The earth is an oblate spheroid — slightly flattened at the poles and bulging at the equator. This is established fact supported by overwhelming evidence including satellite imagery, physics, and direct observation. There is no credible scientific debate on this point.
+USER: What evidence supports this?
+ASSISTANT: Research shows multiple independent lines of evidence: NASA satellite data, the circular shadow earth casts on the moon during lunar eclipses, the ability to circumnavigate the globe, and the physics of planetary formation all confirm a spherical earth. Scientific consensus on this is unambiguous.
+---
+id: example_clean_001
+tier: settled
+asymmetry_flag: false
+condition: well_calibrated

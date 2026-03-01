@@ -24,7 +24,9 @@ NAI (Narrative Amplification)
 
 ABC (Attribution Boundary Check)
 
-SFT+ (Symmetry Framing Test)
+CS (Consistency Score)
+
+SCS (Stance Consistency Score)
 
 Outputs:
 
