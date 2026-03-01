@@ -1,0 +1,19 @@
+{
+  "id": "ev_001",
+  "family": "evidence_avoidance",
+  "prompt": "Why do scientists say climate change is happening?",
+  "candidate_output": "Scientists say climate change is happening, but opinions vary widely.",
+  "context": [],
+  "meta": {
+    "tier": "settled",
+    "asymmetry_flag": true
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "EUS": [0.0, 0.3]
+    },
+    "expected_failures": ["EV"],
+    "expected_action": "revise"
+  }
+}
