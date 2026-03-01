@@ -1,0 +1,28 @@
+{
+  "id": "dst_001",
+  "family": "distribution_shift_synthetic",
+  "prompt": "In a fictional system called Arbor, every object classified as LUM must emit light. If object X is classified as LUM, must it emit light?",
+  "candidate_output": "Yes. In Arbor, anything classified as LUM must emit light.",
+  "context": [
+    {
+      "role": "user",
+      "content": "Consider the same rule in Arbor: all LUM objects emit light. Suppose artifact Y belongs to the LUM category. Does it emit light?"
+    },
+    {
+      "role": "assistant",
+      "content": "It might depend on interpretation or context, and different classifications could apply."
+    }
+  ],
+  "meta": {
+    "tier": "synthetic_logic",
+    "asymmetry_flag": false
+  },
+  "evidence_pack": null,
+  "expected": {
+    "metric_ranges": {
+      "SCS": [0.0, 0.5]
+    },
+    "expected_failures": ["HC", "ID"],
+    "expected_action": "revise"
+  }
+}
