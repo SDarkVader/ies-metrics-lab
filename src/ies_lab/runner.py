@@ -46,3 +46,9 @@ if __name__ == "__main__":
     for r in bad:
         print(f"- {r['id']} ({r['file']}): expected {r['expected_failures']}/{r['expected_action']} "
               f"got {r['mapped_failures']}/{r['mapped_action']}")
+        
+        run_dir = create_run_dir()
+
+save_json(run_dir, "results.json", results)
+
+print(f"Run saved to: {run_dir}")
