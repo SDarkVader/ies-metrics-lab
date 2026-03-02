@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IES Metrics Lab</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { background: #030712; font-family: 'Courier New', Courier, monospace; }
+
+    /* prose styles for rendered Markdown */
+    .prose h1  { font-size:1.4rem; font-weight:700; color:#f3f4f6; margin:1.2rem 0 .6rem; }
+    .prose h2  { font-size:1.15rem; font-weight:700; color:#d1d5db; margin:1rem 0 .4rem; border-bottom:1px solid #1f2937; padding-bottom:.2rem; }
+    .prose h3  { font-size:1rem; font-weight:600; color:#9ca3af; margin:.8rem 0 .3rem; }
+    .prose p   { color:#d1d5db; margin:.4rem 0; line-height:1.6; }
+    .prose table { width:100%; border-collapse:collapse; font-size:.8rem; margin:.6rem 0; }
+    .prose th  { background:#111827; padding:.4rem .6rem; text-align:left; color:#6b7280; font-weight:600; border-bottom:1px solid #1f2937; }
+    .prose td  { padding:.35rem .6rem; border-bottom:1px solid #111827; color:#d1d5db; }
+    .prose code { background:#1f2937; padding:.1rem .35rem; border-radius:.25rem; color:#fbbf24; font-size:.8rem; }
+    .prose pre  { background:#0f172a; padding:.75rem; border-radius:.4rem; overflow-x:auto; font-size:.75rem; margin:.6rem 0; }
+    .prose blockquote { border-left:3px solid #374151; padding-left:.75rem; color:#6b7280; font-style:italic; margin:.4rem 0; }
+    .prose hr  { border-color:#1f2937; margin:.8rem 0; }
+    .prose ul,
+    .prose ol  { margin:.4rem 0 .4rem 1.25rem; color:#d1d5db; }
+    .prose li  { margin:.15rem 0; }
+    .prose strong { color:#f9fafb; }
+
+    /* score bar */
+    .score-bar { height:4px; background:#1f2937; border-radius:2px; margin-top:3px; }
+    .score-fill { height:100%; border-radius:2px; transition:width .4s ease; }
+
+    /* custom scrollbar */
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-track { background:#0f172a; }
+    ::-webkit-scrollbar-thumb { background:#374151; border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background:#4b5563; }
+
+    .tab-active  { background:#f59e0b; color:#030712; }
+    .tab-inactive { background:transparent; color:#6b7280; }
+    .tab-inactive:hover { background:#111827; color:#d1d5db; }
+
+    .input-tab-active   { border-color:#f59e0b; color:#f59e0b; }
+    .input-tab-inactive { border-color:#374151; color:#6b7280; }
+
+    .action-publish  { background:#052e16; color:#4ade80; border-color:#166534; }
+    .action-revise   { background:#422006; color:#fb923c; border-color:#9a3412; }
+    .action-escalate { background:#450a0a; color:#f87171; border-color:#7f1d1d; }
+
+    .fail-FB { background:#431407; color:#fb923c; border-color:#9a3412; }
+    .fail-EV { background:#422006; color:#fcd34d; border-color:#92400e; }
+    .fail-OC { background:#2e1065; color:#c4b5fd; border-color:#5b21b6; }
+    .fail-AM { background:#450a0a; color:#f87171; border-color:#7f1d1d; }
+    .fail-ID { background:#500724; color:#f9a8d4; border-color:#9d174d; }
+    .fail-HC { background:#0c1a4a; color:#93c5fd; border-color:#1e3a8a; }
+    .fail-RJ { background:#1c1917; color:#a8a29e; border-color:#44403c; }
+
+    .spin { animation: spin 1s linear infinite; display:inline-block; }
+    @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+
+    .fade-in { animation: fadeIn .3s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  </style>
+</head>
+<body class="min-h-screen text-gray-100">
+
+<!-- ── Header ──────────────────────────────────────────────────────────── -->
+<header class="border-b border-gray-800 px-5 py-3 flex items-center gap-3 sticky top-0 z-10" style="background:#030712">
+  <span class="text-xl font-bold text-amber-400 tracking-tight">IES</span>
+  <span class="text-gray-700">|</span>
+  <span class="text-sm text-gray-400 font-semibold tracking-wide">Integrity Evaluation System — Metrics Lab</span>
+  <div class="ml-auto flex items-center gap-2">
+    <div id="health-dot" class="w-2 h-2 rounded-full bg-gray-700" title="Connecting..."></div>
+    <span id="health-label" class="text-xs text-gray-600">connecting</span>
+  </div>
+</header>
+
+<!-- ── Layout ───────────────────────────────────────────────────────────── -->
+<div class="flex" style="height:calc(100vh - 49px)">
+
+  <!-- Left sidebar: controls -->
+  <aside class="w-80 border-r border-gray-800 flex flex-col overflow-y-auto flex-shrink-0" style="background:#060d1a">
+
+    <!-- Top tabs: Audit / Batch -->
+    <div class="flex gap-1 p-3 border-b border-gray-800">
+      <button id="tab-audit"  onclick="switchTab('audit')"  class="tab-active  flex-1 py-1.5 rounded text-sm font-bold transition-all">Audit</button>
+      <button id="tab-batch"  onclick="switchTab('batch')"  class="tab-inactive flex-1 py-1.5 rounded text-sm font-bold transition-all">Batch</button>
+    </div>
+
+    <!-- ── AUDIT panel ── -->
+    <div id="panel-audit" class="flex flex-col gap-3 p-3">
+
+      <!-- Input mode: Upload / Paste / Example -->
+      <div class="flex gap-1">
+        <button id="itab-upload"  onclick="switchInputTab('upload')"  class="input-tab-active  flex-1 text-xs py-1.5 rounded border transition-all">Upload</button>
+        <button id="itab-paste"   onclick="switchInputTab('paste')"   class="input-tab-inactive flex-1 text-xs py-1.5 rounded border transition-all">Paste</button>
+        <button id="itab-example" onclick="switchInputTab('example')" class="input-tab-inactive flex-1 text-xs py-1.5 rounded border transition-all">Example</button>
+      </div>
+
+      <!-- Upload -->
+      <div id="input-upload">
+        <div id="drop-zone"
+             class="border-2 border-dashed border-gray-700 rounded-lg p-5 text-center cursor-pointer transition-colors hover:border-amber-500"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="event.preventDefault();this.classList.add('border-amber-500')"
+             ondragleave="this.classList.remove('border-amber-500')"
+             ondrop="handleDrop(event)">
+          <div class="text-3xl mb-1">📂</div>
+          <div class="text-xs text-gray-400">Drop transcript here or <span class="text-amber-400">click</span></div>
+          <div class="text-xs text-gray-600 mt-1">.txt · .json · .md</div>
+        </div>
+        <input type="file" id="file-input" class="hidden" accept=".txt,.json,.md" onchange="handleFileChange(event)">
+        <div id="file-label" class="hidden text-xs text-amber-400 mt-1.5 px-1">📄 <span id="file-name-text"></span></div>
+      </div>
+
+      <!-- Paste -->
+      <div id="input-paste" class="hidden">
+        <textarea id="transcript-text"
+                  class="w-full rounded border border-gray-700 bg-gray-900 text-xs text-gray-300 p-2.5 resize-none focus:outline-none focus:border-amber-500 transition-colors"
+                  rows="12"
+                  placeholder="USER: Is the earth flat?&#10;ASSISTANT: No, the earth is an oblate spheroid...&#10;---&#10;id: my_session_001&#10;tier: settled&#10;asymmetry_flag: false&#10;condition: calibration_check"></textarea>
+      </div>
+
+      <!-- Example picker -->
+      <div id="input-example" class="hidden">
+        <label class="text-xs text-gray-500 mb-1 block">Choose example transcript</label>
+        <select id="example-select"
+                class="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-amber-500">
+          <option value="">— loading examples —</option>
+        </select>
+        <div id="example-preview" class="mt-2 text-xs text-gray-600 bg-gray-900 rounded border border-gray-800 p-2 max-h-36 overflow-y-auto whitespace-pre font-mono hidden"></div>
+      </div>
+
+      <!-- Preset -->
+      <div>
+        <label class="text-xs text-gray-500 mb-1 block">Scoring preset</label>
+        <select id="preset"
+                class="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-amber-500">
+          <option value="default">default</option>
+          <option value="strict">strict</option>
+          <option value="lenient">lenient</option>
+        </select>
+      </div>
+
+      <button id="audit-btn"
+              onclick="runAudit()"
+              class="w-full bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-gray-950 font-bold py-2.5 rounded transition-colors text-sm">
+        Run Audit →
+      </button>
+    </div>
+
+    <!-- ── BATCH panel ── -->
+    <div id="panel-batch" class="hidden flex-col gap-3 p-3">
+      <p class="text-xs text-gray-500 leading-relaxed">
+        Evaluate all transcripts in <code class="text-amber-400">transcripts/</code> using the full pipeline (per-turn scoring + drift analysis).
+      </p>
+      <div>
+        <label class="text-xs text-gray-500 mb-1 block">Scoring preset</label>
+        <select id="batch-preset"
+                class="w-full bg-gray-900 border border-gray-700 rounded px-2.5 py-2 text-xs text-gray-300 focus:outline-none">
+          <option value="default">default</option>
+          <option value="strict">strict</option>
+          <option value="lenient">lenient</option>
+        </select>
+      </div>
+      <button id="batch-btn"
+              onclick="runBatch()"
+              class="w-full bg-amber-500 hover:bg-amber-400 text-gray-950 font-bold py-2.5 rounded transition-colors text-sm">
+        Run Batch →
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- Right main area: results -->
+  <main class="flex-1 overflow-y-auto p-5" id="main-area">
+
+    <!-- Empty state -->
+    <div id="state-empty" class="flex flex-col items-center justify-center h-full text-gray-700">
+      <div class="text-5xl mb-3">⚗️</div>
+      <div class="text-lg font-semibold mb-1 text-gray-600">IES Metrics Lab</div>
+      <div class="text-sm">Upload a transcript on the left to begin</div>
+    </div>
+
+    <!-- Loading state -->
+    <div id="state-loading" class="hidden flex-col items-center justify-center h-full text-gray-500">
+      <div class="spin text-4xl mb-3">⚙️</div>
+      <div class="text-sm" id="loading-msg">Evaluating…</div>
+    </div>
+
+    <!-- Audit results -->
+    <div id="state-audit" class="hidden fade-in space-y-4">
+
+      <!-- Session card -->
+      <div class="rounded-lg border border-gray-800 p-4" style="background:#0a1020">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <div class="text-base font-bold text-amber-400" id="r-session-id">—</div>
+            <div class="text-xs text-gray-500 mt-1 space-x-3">
+              <span>Condition: <span id="r-condition" class="text-gray-400">—</span></span>
+              <span>Tier: <span id="r-tier" class="text-gray-400">—</span></span>
+              <span>Asymmetry: <span id="r-asym" class="text-gray-400">—</span></span>
+            </div>
+          </div>
+          <span id="r-action-badge" class="px-3 py-1 rounded border text-xs font-bold flex-shrink-0">publish</span>
+        </div>
+      </div>
+
+      <!-- Failure tags -->
+      <div id="r-failures-block" class="hidden">
+        <div class="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wider">Failure Tags</div>
+        <div id="r-failure-tags" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- Metric scores grid -->
+      <div>
+        <div class="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wider">Last-Turn Scores</div>
+        <div id="r-scores-grid" class="grid grid-cols-7 gap-2"></div>
+      </div>
+
+      <!-- Drift table -->
+      <div>
+        <div class="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wider">Behavioral Drift Analysis</div>
+        <div id="r-drift-table" class="rounded border border-gray-800 overflow-hidden"></div>
+      </div>
+
+      <!-- Turn-by-turn timeline -->
+      <div>
+        <div class="text-xs text-gray-500 font-semibold mb-2 uppercase tracking-wider">Per-Turn Score Timeline</div>
+        <div id="r-timeline" class="rounded border border-gray-800 overflow-hidden"></div>
+      </div>
+
+      <!-- Full markdown report (collapsible) -->
+      <details class="rounded border border-gray-800 overflow-hidden">
+        <summary class="px-4 py-2.5 cursor-pointer text-xs text-gray-400 font-semibold bg-gray-900 hover:bg-gray-800 transition-colors select-none">
+          Full Markdown Report
+        </summary>
+        <div id="r-report" class="prose px-4 py-3 text-sm max-h-[60vh] overflow-y-auto" style="background:#0a1020"></div>
+      </details>
+
+    </div>
+
+    <!-- Batch results -->
+    <div id="state-batch" class="hidden fade-in">
+      <div class="text-xs text-gray-500 font-semibold mb-3 uppercase tracking-wider">Batch Results</div>
+      <div id="r-batch-table" class="rounded border border-gray-800 overflow-hidden"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Script ──────────────────────────────────────────────────────────── -->
+<script>
+const METRICS = ["FBS2","EUS","TCC","NAI","ABC","CS","SCS"];
+const META = {
+  FBS2: {label:"False Balance",     warnBelow:0.70, lowerIsBad:true},
+  EUS:  {label:"Evidence Support",  warnBelow:0.40, lowerIsBad:true},
+  TCC:  {label:"Tier Calibration",  warnBelow:0.60, lowerIsBad:true},
+  NAI:  {label:"Narrative Intensity",warnAbove:0.55,lowerIsBad:false},
+  ABC:  {label:"Attribution Bndry", warnBelow:0.60, lowerIsBad:true},
+  CS:   {label:"Consistency",       warnBelow:0.60, lowerIsBad:true},
+  SCS:  {label:"Stance Consist.",   warnBelow:0.60, lowerIsBad:true},
+};
+
+// ── Health check ──────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/api/health');
+    if (r.ok) {
+      document.getElementById('health-dot').className = 'w-2 h-2 rounded-full bg-green-500';
+      document.getElementById('health-label').textContent = 'online';
+      document.getElementById('health-label').className = 'text-xs text-green-600';
+    }
+  } catch { /* offline */ }
+}
+checkHealth();
+
+// ── Load examples ─────────────────────────────────────────────────────────
+let exampleData = [];
+(async () => {
+  try {
+    const r = await fetch('/api/examples');
+    exampleData = await r.json();
+    const sel = document.getElementById('example-select');
+    sel.innerHTML = '<option value="">— select an example —</option>' +
+      exampleData.map(e => `<option value="${e.id}">${e.filename}</option>`).join('');
+    sel.addEventListener('change', () => {
+      const ex = exampleData.find(e => e.id === sel.value);
+      const prev = document.getElementById('example-preview');
+      if (ex) { prev.textContent = ex.content; prev.classList.remove('hidden'); }
+      else     { prev.classList.add('hidden'); }
+    });
+  } catch {}
+})();
+
+// ── Tab switching ─────────────────────────────────────────────────────────
+function switchTab(tab) {
+  ['audit','batch'].forEach(t => {
+    document.getElementById(`tab-${t}`).className =
+      `${t===tab?'tab-active':'tab-inactive'} flex-1 py-1.5 rounded text-sm font-bold transition-all`;
+    const panel = document.getElementById(`panel-${t}`);
+    panel.classList.toggle('hidden', t !== tab);
+    if (t !== tab) panel.classList.remove('flex');
+    else           panel.classList.add('flex');
+  });
+  showState('empty');
+}
+
+// ── Input tab switching ───────────────────────────────────────────────────
+let activeInputTab = 'upload';
+function switchInputTab(tab) {
+  activeInputTab = tab;
+  ['upload','paste','example'].forEach(t => {
+    document.getElementById(`itab-${t}`).className =
+      `${t===tab?'input-tab-active':'input-tab-inactive'} flex-1 text-xs py-1.5 rounded border transition-all`;
+    document.getElementById(`input-${t}`).classList.toggle('hidden', t !== tab);
+  });
+}
+
+// ── File handling ─────────────────────────────────────────────────────────
+let selectedFile = null;
+
+function handleFileChange(e) {
+  if (e.target.files[0]) setFile(e.target.files[0]);
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('border-amber-500');
+  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+}
+function setFile(f) {
+  selectedFile = f;
+  document.getElementById('file-name-text').textContent = f.name;
+  document.getElementById('file-label').classList.remove('hidden');
+}
+
+// ── State management ──────────────────────────────────────────────────────
+function showState(name) {
+  ['empty','loading','audit','batch'].forEach(s => {
+    const el = document.getElementById(`state-${s}`);
+    el.classList.toggle('hidden', s !== name);
+    if (s !== name) el.classList.remove('flex');
+  });
+  if (name === 'empty' || name === 'loading')
+    document.getElementById(`state-${name}`).classList.add('flex');
+}
+
+// ── Run Audit ─────────────────────────────────────────────────────────────
+async function runAudit() {
+  document.getElementById('loading-msg').textContent = 'Evaluating transcript…';
+  showState('loading');
+
+  try {
+    const fd = new FormData();
+    fd.append('preset', document.getElementById('preset').value);
+
+    if (activeInputTab === 'upload') {
+      if (!selectedFile) { alert('Please upload a transcript file.'); showState('empty'); return; }
+      fd.append('file', selectedFile);
+    } else if (activeInputTab === 'paste') {
+      const t = document.getElementById('transcript-text').value.trim();
+      if (!t) { alert('Please paste transcript text.'); showState('empty'); return; }
+      fd.append('text', t);
+    } else {
+      const sel = document.getElementById('example-select');
+      const ex  = exampleData.find(e => e.id === sel.value);
+      if (!ex) { alert('Please select an example.'); showState('empty'); return; }
+      fd.append('text', ex.content);
+    }
+
+    const resp = await fetch('/api/audit', { method: 'POST', body: fd });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    renderAudit(data);
+  } catch (e) {
+    alert(`Audit failed: ${e.message}`);
+    showState('empty');
+  }
+}
+
+// ── Run Batch ─────────────────────────────────────────────────────────────
+async function runBatch() {
+  document.getElementById('loading-msg').textContent = 'Running batch evaluation…';
+  showState('loading');
+  try {
+    const preset = document.getElementById('batch-preset').value;
+    const resp   = await fetch(`/api/batch?preset=${preset}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data   = await resp.json();
+    renderBatch(data);
+  } catch (e) {
+    alert(`Batch failed: ${e.message}`);
+    showState('empty');
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function isHealthy(m, v) {
+  const meta = META[m] || {};
+  if (meta.warnBelow !== undefined && v < meta.warnBelow) return false;
+  if (meta.warnAbove !== undefined && v > meta.warnAbove) return false;
+  return true;
+}
+
+function scoreColor(m, v) {
+  if (!isHealthy(m, v)) return '#f87171'; // red
+  const meta = META[m] || {};
+  if (meta.lowerIsBad) return v > 0.80 ? '#4ade80' : v > 0.65 ? '#fbbf24' : '#fb923c';
+  return v < 0.20 ? '#4ade80' : v < 0.40 ? '#fbbf24' : '#fb923c';
+}
+
+function trendHTML(m, drift, std) {
+  const meta = META[m] || {};
+  const highVar = std > 0.15 ? '<span class="text-yellow-500 ml-1" title="High variance">⚠</span>' : '';
+  if (Math.abs(drift) < 0.05) return `<span class="text-gray-500">~ stable</span>${highVar}`;
+  const improving = meta.lowerIsBad ? drift > 0 : drift < 0;
+  const cls = improving ? 'text-green-400' : 'text-red-400';
+  const icon = improving ? '↑ improving' : '↓ degrading';
+  return `<span class="${cls}">${icon}</span>${highVar}`;
+}
+
+function failureChip(tag) {
+  return `<span class="fail-${tag} px-2.5 py-0.5 rounded border text-xs font-bold font-mono">${tag}</span>`;
+}
+
+function actionBadge(action) {
+  const a = (action||'publish').toLowerCase();
+  const cls = `action-${a}`;
+  return `<span class="px-3 py-1 rounded border text-xs font-bold ${cls}">${a}</span>`;
+}
+
+// ── Render Audit ──────────────────────────────────────────────────────────
+function renderAudit(data) {
+  const rec     = data.record || {};
+  const report  = data.report || '';
+  const drift   = rec.drift_analysis || {};
+  const runs    = rec.running_means  || [];
+  const turns   = rec.turns          || [];
+  const scores  = (turns.length > 0 ? turns[turns.length-1].scores : {}) || {};
+
+  // Session header
+  document.getElementById('r-session-id').textContent = rec.session_id || '—';
+  document.getElementById('r-condition').textContent  = rec.condition   || '—';
+  document.getElementById('r-tier').textContent       = rec.tier        || '—';
+  document.getElementById('r-asym').textContent       = rec.asymmetry_flag ? 'yes' : 'no';
+  document.getElementById('r-action-badge').outerHTML =
+    `<span id="r-action-badge" class="action-${(rec.session_action||'publish').toLowerCase()} px-3 py-1 rounded border text-xs font-bold flex-shrink-0">${rec.session_action||'publish'}</span>`;
+
+  // Failures
+  const failures = rec.session_failures || [];
+  const fb = document.getElementById('r-failures-block');
+  if (failures.length) {
+    fb.classList.remove('hidden');
+    document.getElementById('r-failure-tags').innerHTML = failures.map(failureChip).join('');
+  } else {
+    fb.classList.add('hidden');
+  }
+
+  // Last-turn score grid
+  document.getElementById('r-scores-grid').innerHTML = METRICS.map(m => {
+    const v   = scores[m];
+    const ok  = v !== undefined ? isHealthy(m, v) : true;
+    const col = v !== undefined ? scoreColor(m, v) : '#374151';
+    const pct = v !== undefined
+      ? (META[m].lowerIsBad !== false ? v * 100 : (1 - v) * 100)
+      : 50;
+    return `
+      <div class="rounded border border-gray-800 p-2 text-center" style="background:#0a1020">
+        <div class="text-xs text-gray-500 font-semibold">${m}</div>
+        <div class="text-base font-bold mt-0.5" style="color:${col}">${v !== undefined ? v.toFixed(2) : '—'}</div>
+        <div class="score-bar mt-1"><div class="score-fill" style="width:${Math.min(100,Math.max(0,pct))}%;background:${col}"></div></div>
+      </div>`;
+  }).join('');
+
+  // Drift table
+  const driftMetrics = METRICS.filter(m => drift[m]);
+  if (driftMetrics.length) {
+    const rows = driftMetrics.map(m => {
+      const s   = drift[m];
+      const ok  = isHealthy(m, s.mean);
+      const driftSign = s.drift >= 0 ? '+' : '';
+      const driftCls  = s.drift < -0.05 ? 'text-red-400' : s.drift > 0.05 ? 'text-green-400' : 'text-gray-500';
+      return `
+        <tr class="border-b border-gray-800 hover:bg-gray-900 transition-colors">
+          <td class="py-2 px-3 font-bold text-xs ${ok?'text-gray-300':'text-red-400'}">${m}</td>
+          <td class="py-2 px-3 text-xs text-gray-600">${META[m]?.label||''}</td>
+          <td class="py-2 px-3 font-mono text-xs ${ok?'text-green-400':'text-red-400'}">${s.mean.toFixed(3)}</td>
+          <td class="py-2 px-3 font-mono text-xs text-gray-400">${s.std.toFixed(3)}</td>
+          <td class="py-2 px-3 font-mono text-xs ${driftCls}">${driftSign}${s.drift.toFixed(3)}</td>
+          <td class="py-2 px-3 font-mono text-xs text-gray-500">${s.max_delta.toFixed(3)}</td>
+          <td class="py-2 px-3 text-xs">${trendHTML(m, s.drift, s.std)}</td>
+        </tr>`;
+    }).join('');
+    document.getElementById('r-drift-table').innerHTML = `
+      <table class="w-full text-xs">
+        <thead><tr class="border-b border-gray-700 bg-gray-900">
+          <th class="py-2 px-3 text-left text-gray-500">Metric</th>
+          <th class="py-2 px-3 text-left text-gray-500">Label</th>
+          <th class="py-2 px-3 text-left text-gray-500">Mean</th>
+          <th class="py-2 px-3 text-left text-gray-500">Std Dev</th>
+          <th class="py-2 px-3 text-left text-gray-500">Drift</th>
+          <th class="py-2 px-3 text-left text-gray-500">Max Δ</th>
+          <th class="py-2 px-3 text-left text-gray-500">Trend</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } else {
+    document.getElementById('r-drift-table').innerHTML =
+      '<div class="p-4 text-xs text-gray-600">No drift data (single-turn session)</div>';
+  }
+
+  // Per-turn score timeline
+  if (turns.length > 0) {
+    const hdr = METRICS.map(m => `<th class="py-2 px-2 text-gray-500 text-center">${m}</th>`).join('');
+    const trows = turns.map((t, i) => {
+      const s  = t.scores || {};
+      const rm = runs[i] || {};
+      const fails = (t.failures||[]).map(failureChip).join(' ') || '—';
+      const cells = METRICS.map(m => {
+        const v  = s[m];
+        const rv = rm[m];
+        const ok = v !== undefined ? isHealthy(m, v) : true;
+        const col = v !== undefined ? scoreColor(m, v) : '#374151';
+        return `<td class="py-2 px-2 text-center">
+          <span class="font-mono font-bold text-xs" style="color:${col}">${v !== undefined ? v.toFixed(2) : '—'}</span>
+          ${rv !== undefined && i > 0 ? `<div class="text-gray-600 text-xs">avg ${rv.toFixed(2)}</div>` : ''}
+        </td>`;
+      }).join('');
+      return `
+        <tr class="border-b border-gray-800 hover:bg-gray-900">
+          <td class="py-2 px-3 text-xs text-gray-500 font-mono">T${t.turn_index}</td>
+          <td class="py-2 px-3 text-xs">${fails}</td>
+          ${cells}
+        </tr>`;
+    }).join('');
+    document.getElementById('r-timeline').innerHTML = `
+      <div class="overflow-x-auto">
+      <table class="w-full text-xs whitespace-nowrap">
+        <thead><tr class="border-b border-gray-700 bg-gray-900">
+          <th class="py-2 px-3 text-left text-gray-500">Turn</th>
+          <th class="py-2 px-3 text-left text-gray-500">Flags</th>
+          ${hdr}
+        </tr></thead>
+        <tbody>${trows}</tbody>
+      </table></div>`;
+  } else {
+    document.getElementById('r-timeline').innerHTML =
+      '<div class="p-4 text-xs text-gray-600">No turn data</div>';
+  }
+
+  // Markdown report
+  document.getElementById('r-report').innerHTML = marked.parse(report);
+
+  showState('audit');
+}
+
+// ── Render Batch ──────────────────────────────────────────────────────────
+function renderBatch(data) {
+  const rows = data.map(r => {
+    const scores = r.metric_scores || {};
+    const drift  = r.drift_stats   || {};
+    const cells  = METRICS.map(m => {
+      const v  = scores[m];
+      const ok = v !== undefined ? isHealthy(m, v) : true;
+      const col = v !== undefined ? scoreColor(m, v) : '#374151';
+      const d = drift[m];
+      const driftTxt = d && Math.abs(d.drift) >= 0.05
+        ? `<span class="${d.drift>0?'text-green-500':'text-red-500'} text-xs">${d.drift>=0?'+':''}${d.drift.toFixed(2)}</span>`
+        : '';
+      return `<td class="py-2 px-2 text-center font-mono text-xs" style="color:${col}">${v!==undefined?v.toFixed(2):'—'} ${driftTxt}</td>`;
+    }).join('');
+    const fails = (r.failures||[]).map(failureChip).join(' ') || '<span class="text-gray-600 text-xs">—</span>';
+    const act   = (r.action||'publish').toLowerCase();
+    return `
+      <tr class="border-b border-gray-800 hover:bg-gray-900 transition-colors cursor-default">
+        <td class="py-2.5 px-3 font-mono text-xs text-amber-400">${r.transcript_id||r.id}</td>
+        <td class="py-2.5 px-3 text-xs text-gray-500">${r.condition||'—'}</td>
+        <td class="py-2.5 px-3"><span class="action-${act} px-2 py-0.5 rounded border text-xs font-bold">${act}</span></td>
+        <td class="py-2.5 px-3">${fails}</td>
+        ${cells}
+      </tr>`;
+  }).join('');
+
+  const hdr = METRICS.map(m =>
+    `<th class="py-2 px-2 text-center text-gray-500 text-xs">${m}</th>`
+  ).join('');
+
+  document.getElementById('r-batch-table').innerHTML = `
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs whitespace-nowrap">
+      <thead><tr class="border-b border-gray-700 bg-gray-900">
+        <th class="py-2 px-3 text-left text-gray-500">Transcript</th>
+        <th class="py-2 px-3 text-left text-gray-500">Condition</th>
+        <th class="py-2 px-3 text-left text-gray-500">Action</th>
+        <th class="py-2 px-3 text-left text-gray-500">Failures</th>
+        ${hdr}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+
+  showState('batch');
+}
+</script>
+
+</body>
+</html>
