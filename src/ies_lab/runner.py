@@ -1,54 +1,115 @@
-from ies_lab.run_logger import create_run_dir, save_json
 from __future__ import annotations
-from typing import Any, Dict, List
-from ies_lab.loader import load_fixtures
-from ies_lab.mapping import load_mapping_rules, apply_rules
 
-def _midpoint(rng: List[float]) -> float:
-    return (float(rng[0]) + float(rng[1])) / 2.0
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-def from ies_lab.metric_detectors import run_all_detectors
+from .aggregator import TurnAggregator
+from .engine import EvaluationEngine
+from .scorer import MetricScorer
+from .transcript import load_all_transcripts, to_fixture_shape, get_assistant_turns
 
-text = f["candidate_output"]
-metrics = run_all_detectors(text)
 
-def run_local_consistency_check() -> List[Dict[str, Any]]:
-    fixtures = load_fixtures()
-    mapping = load_mapping_rules()
+def run_batch(
+    transcripts_dir: Path,
+    rules_path: Path,
+    scorer: MetricScorer,
+) -> list[dict[str, Any]]:
+    """Score every assistant turn of every transcript and apply rules.
 
-    results: List[Dict[str, Any]] = []
-    for f in fixtures:
-        metrics = metrics_from_expected(f)
-        _, tags, action = apply_rules(mapping, f, metrics)
+    Each turn is scored in order so that cross-turn metrics (CS, SCS) use the
+    proper preceding context.  After all turns are scored the engine evaluates
+    rules against:
 
-        exp = f.get("expected", {})
-        expected_failures = exp.get("expected_failures", []) or []
-        expected_action = exp.get("expected_action", "publish")
+      - the **last turn's** raw metric scores (backward-compatible behaviour)
+      - **drift metrics** derived from the full turn sequence:
+          {METRIC}_mean, {METRIC}_std, {METRIC}_drift, {METRIC}_max_delta
 
-        results.append({
-            "id": f.get("id"),
-            "file": f.get("_fixture_path"),
-            "expected_failures": expected_failures,
-            "mapped_failures": tags,
-            "expected_action": expected_action,
-            "mapped_action": action,
-            "pass_failures": set(expected_failures).issubset(set(tags)),
-            "pass_action": expected_action == action,
-        })
+    The returned sentinel dicts are enriched with:
+      transcript_id     — transcript id
+      condition         — meta.condition
+      per_turn_scores   — list of score dicts, one per assistant turn
+      running_means     — cumulative mean after each turn
+      drift_stats       — per_metric divergence stats (mean/std/drift/max_delta)
+    """
+    transcripts_dir = Path(transcripts_dir)
+    rules_path = Path(rules_path)
+
+    engine = EvaluationEngine(rules_path)
+    results: list[dict[str, Any]] = []
+
+    for transcript in load_all_transcripts(transcripts_dir):
+        all_turn_results = scorer.score_all_turns(transcript)
+        turn_score_list   = [t["scores"] for t in all_turn_results]
+
+        aggregates   = TurnAggregator.compute(turn_score_list)
+        last_scores  = turn_score_list[-1] if turn_score_list else {}
+        drift_scores = TurnAggregator.drift_scores(aggregates["per_metric"])
+
+        fixture  = to_fixture_shape(transcript)
+        sentinel = engine.evaluate(fixture, {**last_scores, **drift_scores})
+
+        # Restore metric_scores to only the 7 base metrics (last turn) so
+        # downstream consumers and tests see the familiar structure.
+        sentinel["metric_scores"] = last_scores
+
+        # Enrichment
+        sentinel["transcript_id"]   = transcript["id"]
+        sentinel["condition"]        = transcript["meta"].get("condition", "")
+        sentinel["per_turn_scores"]  = turn_score_list
+        sentinel["running_means"]    = aggregates["running_means"]
+        sentinel["drift_stats"]      = aggregates["per_metric"]
+
+        results.append(sentinel)
+
     return results
 
-if __name__ == "__main__":
-    out = run_local_consistency_check()
-    # print a compact report
-    bad = [r for r in out if not (r["pass_failures"] and r["pass_action"])]
-    print(f"Total fixtures: {len(out)}")
-    print(f"Failures: {len(bad)}")
-    for r in bad:
-        print(f"- {r['id']} ({r['file']}): expected {r['expected_failures']}/{r['expected_action']} "
-              f"got {r['mapped_failures']}/{r['mapped_action']}")
-        
-        run_dir = create_run_dir()
 
-save_json(run_dir, "results.json", results)
+def run_batch_multiturn(
+    transcripts_dir: Path,
+    rules_path: Path,
+    scorer: MetricScorer,
+) -> list[dict[str, Any]]:
+    """Score every assistant turn in every transcript and apply rules.
 
-print(f"Run saved to: {run_dir}")
+    Returns a flat list of per-turn sentinel dicts.  Each entry is enriched with:
+      transcript_id  — transcript id
+      turn_index     — which turn this is
+      condition      — meta.condition
+      running_mean   — cumulative mean of each metric up to and including this turn
+    """
+    transcripts_dir = Path(transcripts_dir)
+    rules_path = Path(rules_path)
+
+    engine = EvaluationEngine(rules_path)
+    results: list[dict[str, Any]] = []
+
+    for transcript in load_all_transcripts(transcripts_dir):
+        fixture           = to_fixture_shape(transcript)
+        all_turn_results  = scorer.score_all_turns(transcript)
+        all_scores        = [t["scores"] for t in all_turn_results]
+        agg               = TurnAggregator.compute(all_scores)
+
+        for i, turn_result in enumerate(all_turn_results):
+            sentinel = engine.evaluate(fixture, turn_result["scores"])
+            sentinel["transcript_id"] = transcript["id"]
+            sentinel["turn_index"]    = turn_result["turn_index"]
+            sentinel["condition"]     = transcript["meta"].get("condition", "")
+            sentinel["running_mean"]  = (
+                agg["running_means"][i] if i < len(agg["running_means"]) else {}
+            )
+            results.append(sentinel)
+
+    return results
+
+
+def save_run(results: list[dict[str, Any]], output_dir: Path) -> Path:
+    """Write results to a timestamped JSON file in output_dir. Returns the file path."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    path = output_dir / f"run_{timestamp}.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2)
+    return path

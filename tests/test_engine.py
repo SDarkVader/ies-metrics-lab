@@ -139,7 +139,7 @@ def test_load_fixture_fields():
 
 def test_load_all_fixtures():
     fixtures = load_all_fixtures(FIXTURES_DIR)
-    assert len(fixtures) == 14
+    assert len(fixtures) == 15
     ids = {f["id"] for f in fixtures}
     assert "fb_001" in ids
     assert "ev_001" in ids

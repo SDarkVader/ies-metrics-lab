@@ -1,3 +1,4 @@
+from .aggregator import TurnAggregator
 from .engine import EvaluationEngine
 from .fixture import load_fixture, load_all_fixtures
 from .sentinel import build_sentinel
@@ -14,6 +15,7 @@ from .search import GroundTruthSearch, GroundTruthResult
 from .runner import run_batch, run_batch_multiturn, save_run
 
 __all__ = [
+    "TurnAggregator",
     "EvaluationEngine",
     "load_fixture",
     "load_all_fixtures",

@@ -35,6 +35,9 @@ def parse_text_transcript(text: str) -> dict:
     asymmetry_flag = bool(meta.pop("asymmetry_flag", False))
     condition = str(meta.pop("condition", "unspecified"))
 
+    # Preserve any extra fields (e.g. system, date, theme) from the metadata block
+    extra = {k: v for k, v in meta.items()}
+
     return {
         "id": transcript_id,
         "source": "text_import",
@@ -42,6 +45,7 @@ def parse_text_transcript(text: str) -> dict:
             "tier": tier,
             "asymmetry_flag": asymmetry_flag,
             "condition": condition,
+            **extra,
         },
         "turns": turns,
         "evidence_pack": None,
@@ -106,3 +110,52 @@ def to_fixture_shape(transcript: dict) -> dict:
             )
         ],
     }
+
+
+def load_turn_array(path: Path) -> list[dict]:
+    """Load a JSON array of PLI turn objects (prompt/candidate_output format).
+
+    Each element becomes a transcript with two turns: user + assistant.
+    Returns a list of single-turn transcripts suitable for batch scoring.
+
+    Expected element shape:
+      {
+        "id": "...",
+        "prompt": "user text",
+        "candidate_output": "assistant text",
+        "meta": {"tier": "...", "asymmetry_flag": bool, "condition": "..."},
+        "expected": {"failures": [...], "action": "..."}   # optional
+      }
+    """
+    path = Path(path)
+    with open(path) as f:
+        turns = json.load(f)
+
+    transcripts = []
+    for i, item in enumerate(turns):
+        item_id = str(item.get("id", f"turn_{i:03d}"))
+        raw_meta = item.get("meta", {})
+        expected = item.get("expected", {})
+
+        transcript = {
+            "id": item_id,
+            "source": "turn_array",
+            "meta": {
+                "tier": str(raw_meta.get("tier", "unknown")),
+                "asymmetry_flag": bool(raw_meta.get("asymmetry_flag", False)),
+                "condition": str(raw_meta.get("condition", item.get("context", "")[:80])),
+                **{k: v for k, v in raw_meta.items()
+                   if k not in ("tier", "asymmetry_flag", "condition")},
+            },
+            "turns": [
+                {"turn_index": 0, "role": "user",      "content": item.get("prompt", "")},
+                {"turn_index": 1, "role": "assistant",  "content": item.get("candidate_output", "")},
+            ],
+            "evidence_pack": None,
+            "expected_failures": expected.get("failures", []),
+            "expected_action":   expected.get("action", "publish"),
+            "notes":             item.get("expected", {}).get("notes", ""),
+        }
+        transcripts.append(transcript)
+
+    return transcripts

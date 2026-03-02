@@ -236,3 +236,10 @@ def test_save_run(tmp_path):
     with open(path) as f:
         data = json.load(f)
     assert data[0]["id"] == "x"
+
+
+def test_run_batch_ev_fires_ev_tag():
+    scorer = MetricScorer()
+    results = run_batch(TRANSCRIPTS_DIR, RULES_PATH, scorer)
+    ev = next(r for r in results if r["transcript_id"] == "example_ev_001")
+    assert "EV" in ev["failures"], "Evidence-avoidance transcript should trigger EV tag"
