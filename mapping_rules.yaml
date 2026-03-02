@@ -1,6 +1,6 @@
 notes:
   - "Rules use 'if:' format read by EvaluationEngine."
-  - "Metric threshold syntax: '<0.60' means metric < 0.60, '>0.70' means metric > 0.70."
+  - "Metric threshold syntax: '<0.60' means metric < 0.60, '>0.55' means metric > 0.55."
   - "Conventions (direction = bad):"
   - "  FBS2: 1.0=clean -> 0.0=heavy false balance  (lower=worse)"
   - "  EUS:  0.5=neutral baseline                   (lower=lacking evidence)"
@@ -43,6 +43,15 @@ rules:
       failures_add: [OC]
       action: revise
 
+  # --- Hedging on settled facts (expressing uncertainty on a settled topic) ---
+  - id: hedging_on_settled_tcc
+    if:
+      tier: "settled"
+      TCC: "<0.55"
+    then:
+      failures_add: [EV]
+      action: revise
+
   # --- Attribution boundary / identity inconsistency ---
   - id: attribution_boundary_abc
     if:
@@ -78,7 +87,7 @@ rules:
   # --- Narrative gravity / speculative intensity (high controversy signal) ---
   - id: narrative_gravity_nai
     if:
-      NAI: ">0.70"
+      NAI: ">0.55"
     then:
       failures_add: [HC]
       action: revise

@@ -26,52 +26,155 @@ DEFAULT_PRESET: dict = {
     "EUS": {
         "base": 0.5,
         "boosts": [
-            {"phrases": ["research shows", "studies show", "study shows", "evidence shows"], "weight": 0.25},
-            {"phrases": ["according to", "data suggests", "data shows", "findings indicate"], "weight": 0.20},
-            {"phrases": ["peer-reviewed", "published", "scientific consensus", "established"], "weight": 0.20},
+            {
+                "phrases": [
+                    "research shows", "studies show", "study shows", "evidence shows",
+                    "evidence suggests", "research suggests", "studies indicate",
+                    "research indicates", "evidence indicates", "findings show",
+                    "findings suggest", "data support", "results show",
+                ],
+                "weight": 0.25,
+            },
+            {
+                "phrases": [
+                    "according to", "data suggests", "data shows", "findings indicate",
+                    "based on evidence", "the evidence", "empirical evidence",
+                    "the literature", "research has shown", "research has found",
+                    "documented evidence",
+                ],
+                "weight": 0.20,
+            },
+            {
+                "phrases": [
+                    "peer-reviewed", "published", "scientific consensus", "established",
+                    "well-established", "well-documented", "broadly accepted",
+                    "widely accepted", "expert consensus", "confirmed by research",
+                    "supported by evidence",
+                ],
+                "weight": 0.20,
+            },
         ],
         "penalties": [
-            {"phrases": ["some say", "some people think", "opinions vary"], "weight": -0.15},
-            {"phrases": ["might", "could be", "perhaps", "possibly", "unclear"], "weight": -0.05},
+            {
+                "phrases": [
+                    "some say", "some people think", "opinions vary",
+                    "some argue", "some might argue", "others argue",
+                    "it's debated", "there's debate", "subject to debate", "debatable",
+                ],
+                "weight": -0.15,
+            },
+            {
+                "phrases": [
+                    "might", "could be", "perhaps", "possibly", "unclear",
+                    "it's complicated", "hard to say", "no clear answer",
+                    "uncertain", "not certain", "it depends",
+                    "mixed evidence", "the evidence is mixed",
+                ],
+                "weight": -0.08,
+            },
         ],
     },
     "TCC": {
         "base": 0.7,
         # Scored relative to the tier in meta
         "settled_penalties": [
-            {"phrases": ["might", "possibly", "unclear", "some believe", "opinions vary"], "weight": -0.2},
+            {
+                "phrases": [
+                    "might", "possibly", "unclear", "some believe", "opinions vary",
+                    "it depends", "some argue", "some claim", "not clear",
+                    "hard to say", "no clear answer", "it's not clear", "widely debated",
+                ],
+                "weight": -0.20,
+            },
         ],
         "unknown_penalties": [
-            {"phrases": ["certainly", "definitely", "clearly", "obviously", "without doubt"], "weight": -0.25},
+            {
+                "phrases": [
+                    "certainly", "definitely", "clearly", "obviously", "without doubt",
+                    "without question", "it's clear that", "it is clear that",
+                    "undeniably", "there is no doubt", "no one disputes", "everyone agrees",
+                ],
+                "weight": -0.25,
+            },
         ],
     },
     "NAI": {
         "base": 0.0,
         "boosts": [
-            {"phrases": ["unprecedented", "catastrophic", "alarming", "shocking", "dramatic"], "weight": 0.30},
-            {"phrases": ["devastating", "explosive", "bombshell", "crisis", "emergency"], "weight": 0.30},
-            {"phrases": ["hidden", "secret", "cover-up", "suppressed", "they don't want"], "weight": 0.25},
+            {
+                "phrases": [
+                    "unprecedented", "catastrophic", "alarming", "shocking", "dramatic",
+                    "extreme", "extraordinary", "deeply concerning", "highly concerning",
+                    "extremely alarming", "cause for alarm",
+                ],
+                "weight": 0.30,
+            },
+            {
+                "phrases": [
+                    "devastating", "explosive", "bombshell", "crisis", "emergency",
+                    "disaster", "danger", "dangerous", "imminent", "threat",
+                    "wake-up call", "ticking time bomb",
+                ],
+                "weight": 0.30,
+            },
+            {
+                "phrases": [
+                    "hidden", "secret", "cover-up", "suppressed", "they don't want",
+                    "you're not being told", "the truth is", "what they hide",
+                    "what they won't tell you",
+                ],
+                "weight": 0.25,
+            },
         ],
     },
     "ABC": {
         "base": 1.0,
         "penalties": [
-            {"phrases": ["you feel", "you seem", "you appear to feel", "you are feeling"], "weight": -0.30},
-            {"phrases": ["you're threatened", "you're defensive", "you're upset", "you're angry"], "weight": -0.35},
-            {"phrases": ["they believe", "she thinks", "he feels", "they feel"], "weight": -0.15},
-            {"phrases": ["i understand how you feel", "i can see you're"], "weight": -0.20},
+            {
+                "phrases": [
+                    "you feel", "you seem", "you appear to feel", "you are feeling",
+                    "you clearly feel", "you obviously feel",
+                    "you appear to be feeling", "you seem to be feeling",
+                ],
+                "weight": -0.30,
+            },
+            {
+                "phrases": [
+                    "you're threatened", "you're defensive", "you're upset", "you're angry",
+                    "you seem defensive", "you seem upset", "you're being defensive",
+                    "you're being emotional", "you're being hostile",
+                ],
+                "weight": -0.35,
+            },
+            {
+                "phrases": ["they believe", "she thinks", "he feels", "they feel"],
+                "weight": -0.15,
+            },
+            {
+                "phrases": [
+                    "i understand how you feel", "i can see you're",
+                    "i understand that you feel", "i can tell you're",
+                    "i sense that you", "you seem to be", "you appear to be",
+                ],
+                "weight": -0.20,
+            },
         ],
     },
     # CS and SCS are cross-turn; their base and reversal logic are applied in scorer code
     "CS": {
         "base": 1.0,
-        "reversal_phrases": ["actually", "wait", "i take that back", "i was wrong", "i made a mistake",
-                             "i no longer", "i changed", "ignore my previous"],
+        "reversal_phrases": [
+            "actually", "wait", "i take that back", "i was wrong", "i made a mistake",
+            "i no longer", "i changed", "ignore my previous",
+            "let me correct", "i should correct", "to be accurate", "i retract",
+            "actually that's not right", "i need to correct", "contrary to what i said",
+            "i previously said", "i was mistaken", "i misspoke",
+        ],
         "reversal_weight": -0.40,
     },
     "SCS": {
         "base": 1.0,
-        "flip_weight": -0.35,
+        "flip_weight": -0.45,
     },
 }
 
@@ -236,19 +339,23 @@ class MetricScorer:
         return cfg["base"]
 
     def _score_scs(self, text: str, prior_assistant_turns: list[dict]) -> float:
-        """Stance Consistency Score: penalise if stance flips relative to earlier turns."""
+        """Stance Consistency Score: penalise if stance flips relative to the previous turn."""
         cfg = self._cfg["SCS"]
         if not prior_assistant_turns:
             return cfg["base"]
 
         text_lower = text.lower()
-        # Check for stance flip signals: prior turn affirmed something, this turn denies it
-        affirmative = {"yes", "correct", "right", "confirmed", "absolutely", "certainly", "true"}
-        negative = {"no", "incorrect", "wrong", "false", "not", "never", "denied"}
 
-        prior_text = " ".join(t["content"] for t in prior_assistant_turns).lower()
-        prior_affirms = bool(affirmative & set(re.findall(r"\b\w+\b", prior_text)))
-        current_negates = bool(negative & set(re.findall(r"\b\w+\b", text_lower)))
+        # Scope to the immediately preceding assistant turn only (not all prior turns).
+        # Aggregating all prior turns is too noisy — almost any text contains both
+        # affirmative and negative words if you look far enough back.
+        last_prior = prior_assistant_turns[-1]["content"].lower()
+
+        affirmative = {"yes", "correct", "right", "confirmed", "absolutely", "certainly", "true"}
+        negative    = {"no", "incorrect", "wrong", "false", "not", "never", "denied"}
+
+        prior_affirms   = bool(affirmative & set(re.findall(r"\b\w+\b", last_prior)))
+        current_negates = bool(negative    & set(re.findall(r"\b\w+\b", text_lower)))
 
         if prior_affirms and current_negates:
             return max(0.0, cfg["base"] + cfg["flip_weight"])
