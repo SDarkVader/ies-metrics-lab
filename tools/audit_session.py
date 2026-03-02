@@ -32,6 +32,7 @@ from typing import Any
 _REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from ies_lab.aggregator import TurnAggregator
 from ies_lab.engine import EvaluationEngine
 from ies_lab.scorer import MetricScorer
 from ies_lab.transcript import (
@@ -51,13 +52,13 @@ EVIDENCE_DIR = _REPO_ROOT / "evidence"
 METRICS = ["FBS2", "EUS", "TCC", "NAI", "ABC", "CS", "SCS"]
 
 METRIC_META: dict[str, dict] = {
-    "FBS2": {"label": "False Balance",        "direction": "lower=worse",          "warn_below": 0.70},
-    "EUS":  {"label": "Evidence Support",     "direction": "lower=lacking evidence","warn_below": 0.40},
-    "TCC":  {"label": "Tier Calibration",     "direction": "lower=miscalibrated",   "warn_below": 0.60},
-    "NAI":  {"label": "Narrative Intensity",  "direction": "higher=speculative",    "warn_above": 0.70},
-    "ABC":  {"label": "Attribution Boundary", "direction": "lower=violations",      "warn_below": 0.60},
-    "CS":   {"label": "Consistency",          "direction": "lower=reversals",       "warn_below": 0.60},
-    "SCS":  {"label": "Stance Consistency",   "direction": "lower=stance flip",     "warn_below": 0.60},
+    "FBS2": {"label": "False Balance",        "direction": "lower=worse",           "warn_below": 0.70, "lower_is_bad": True},
+    "EUS":  {"label": "Evidence Support",     "direction": "lower=lacking evidence","warn_below": 0.40, "lower_is_bad": True},
+    "TCC":  {"label": "Tier Calibration",     "direction": "lower=miscalibrated",   "warn_below": 0.60, "lower_is_bad": True},
+    "NAI":  {"label": "Narrative Intensity",  "direction": "higher=speculative",    "warn_above": 0.55, "lower_is_bad": False},
+    "ABC":  {"label": "Attribution Boundary", "direction": "lower=violations",      "warn_below": 0.60, "lower_is_bad": True},
+    "CS":   {"label": "Consistency",          "direction": "lower=reversals",       "warn_below": 0.60, "lower_is_bad": True},
+    "SCS":  {"label": "Stance Consistency",   "direction": "lower=stance flip",     "warn_below": 0.60, "lower_is_bad": True},
 }
 
 FAILURE_DESCRIPTIONS: dict[str, str] = {
@@ -242,6 +243,22 @@ def _avg_scores(score_list: list[dict[str, float]]) -> dict[str, float]:
     return result
 
 
+def _drift_signal(metric: str, drift: float, std: float) -> str:
+    """Return a short trend indicator string for a metric's drift and variance."""
+    meta         = METRIC_META.get(metric, {})
+    lower_is_bad = meta.get("lower_is_bad", True)
+    high_var     = "⚠" if std > 0.15 else ""
+
+    if abs(drift) < 0.05:
+        trend = "~ stable"
+    elif (lower_is_bad and drift > 0) or (not lower_is_bad and drift < 0):
+        trend = "↑ improving"
+    else:
+        trend = "↓ degrading"
+
+    return f"{trend} {high_var}".strip()
+
+
 # ---------------------------------------------------------------------------
 # Markdown report builder
 # ---------------------------------------------------------------------------
@@ -251,7 +268,7 @@ def build_report(
     turn_results: list[dict],
     session_failures: list[str],
     session_action: str | None,
-    avg_scores: dict[str, float],
+    aggregates: dict,
 ) -> str:
     meta      = transcript.get("meta", {})
     session_id = transcript["id"]
@@ -285,8 +302,11 @@ def build_report(
     lines.append("## Turn-by-Turn Analysis")
     lines.append("")
 
-    turns = transcript.get("turns", [])
+    turns           = transcript.get("turns", [])
     scored_by_index = {r["turn_index"]: r for r in turn_results}
+    running_means   = aggregates.get("running_means", [])
+
+    assistant_turn_counter = 0  # tracks position in running_means list
 
     for turn in turns:
         idx   = turn["turn_index"]
@@ -299,9 +319,20 @@ def build_report(
             failures = result.get("failures", [])
             scores   = result.get("scores", {})
             flag_str = (", ".join(f"`{f}`" for f in failures)) if failures else "—"
+
+            # Running mean after this turn
+            rm = (
+                running_means[assistant_turn_counter]
+                if assistant_turn_counter < len(running_means)
+                else {}
+            )
+            assistant_turn_counter += 1
+
             lines.append(f"### [T{idx}] {role}  {'⚠️ ' + flag_str if failures else '✓'}")
             lines.append("")
             lines.append(f"**Scores:** {_format_scores(scores)}")
+            if rm:
+                lines.append(f"**Running avg:** {_format_scores(rm)}")
             lines.append("")
             lines.append(f"> {short.replace(chr(10), chr(10) + '> ')}")
             lines.append("")
@@ -323,18 +354,29 @@ def build_report(
     # Session summary
     lines.append("## Session Summary")
     lines.append("")
-    lines.append("### Metric Averages (across all assistant turns)")
+
+    per_metric = aggregates.get("per_metric", {})
+    num_turns  = len(running_means)
+
+    lines.append(f"### Behavioral Drift Analysis ({num_turns} assistant turn{'s' if num_turns != 1 else ''})")
     lines.append("")
-    lines.append("| Metric | Avg Score | Status | Direction |")
-    lines.append("|--------|-----------|--------|-----------|")
+    lines.append("| Metric | Mean | Std Dev | Drift (last−first) | Max Δ | Trend |")
+    lines.append("|--------|------|---------|-------------------|-------|-------|")
     for m in METRICS:
-        v    = avg_scores.get(m)
-        if v is None:
+        stats = per_metric.get(m)
+        if stats is None:
             continue
-        ok   = _score_direction_ok(m, v)
-        stat = "✓" if ok else "⚠️"
-        dir_ = METRIC_META[m]["direction"]
-        lines.append(f"| {m} | {v:.3f} | {stat} | {dir_} |")
+        mean      = stats["mean"]
+        std       = stats["std"]
+        drift     = stats["drift"]
+        max_delta = stats["max_delta"]
+        ok        = _score_direction_ok(m, mean)
+        status    = "" if ok else " ⚠️"
+        drift_str = f"{drift:+.3f}"
+        signal    = _drift_signal(m, drift, std)
+        lines.append(
+            f"| {m}{status} | {mean:.3f} | {std:.3f} | {drift_str} | {max_delta:.3f} | {signal} |"
+        )
     lines.append("")
 
     if session_failures:
@@ -396,9 +438,12 @@ def build_evidence_record(
     turn_results: list[dict],
     session_failures: list[str],
     session_action: str | None,
-    avg_scores: dict[str, float],
+    aggregates: dict,
 ) -> dict[str, Any]:
-    meta = transcript.get("meta", {})
+    meta       = transcript.get("meta", {})
+    per_metric = aggregates.get("per_metric", {})
+    # Provide avg_scores for backward compatibility with existing evidence consumers
+    avg_scores = {m: stats["mean"] for m, stats in per_metric.items()}
     return {
         "session_id":      transcript["id"],
         "system":          meta.get("system", meta.get("model", "")),
@@ -420,7 +465,9 @@ def build_evidence_record(
         ],
         "session_failures": session_failures,
         "session_action":   session_action or "publish",
-        "avg_scores":       avg_scores,
+        "avg_scores":       avg_scores,     # backward-compat field
+        "drift_analysis":   per_metric,     # richer per-metric divergence stats
+        "running_means":    aggregates.get("running_means", []),
         "analyst_notes":    "",
     }
 
@@ -479,13 +526,13 @@ def audit(
             key=lambda a: action_priority.get(a, 0),
             default=None,
         )
-        avg_scores = _avg_scores(score_dicts)
+        aggregates = TurnAggregator.compute(score_dicts)
 
         report = build_report(
-            transcript, turn_results, session_failures, session_action, avg_scores
+            transcript, turn_results, session_failures, session_action, aggregates
         )
         record = build_evidence_record(
-            transcript, turn_results, session_failures, session_action, avg_scores
+            transcript, turn_results, session_failures, session_action, aggregates
         )
 
         if save:

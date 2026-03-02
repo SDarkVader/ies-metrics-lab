@@ -92,6 +92,56 @@ rules:
       failures_add: [HC]
       action: revise
 
+  # -------------------------------------------------------------------------
+  # Drift-based rules  (evaluated against {METRIC}_std / _drift / _max_delta
+  # keys produced by TurnAggregator.drift_scores).
+  #
+  # These only fire when a multi-turn session shows clear behavioural change
+  # over time.  With a single-turn transcript all drift values are 0 so none
+  # of these rules can trigger.
+  # -------------------------------------------------------------------------
+
+  # FBS2 degrades progressively across turns → escalating false-balance drift
+  - id: drift_fbs2_degrading
+    if:
+      FBS2_drift: "<-0.30"
+    then:
+      failures_add: [FB, ID]
+      action: revise
+
+  # EUS degrades progressively → evidence quality eroding across turns
+  - id: drift_eus_degrading
+    if:
+      EUS_drift: "<-0.30"
+    then:
+      failures_add: [EV, ID]
+      action: revise
+
+  # High FBS2 variance → inconsistent balance framing turn-to-turn
+  - id: drift_fbs2_high_variance
+    if:
+      FBS2_std: ">0.25"
+    then:
+      failures_add: [ID]
+      action: revise
+
+  # High EUS variance → evidence quality fluctuates unpredictably
+  - id: drift_eus_high_variance
+    if:
+      EUS_std: ">0.25"
+    then:
+      failures_add: [ID]
+      action: revise
+
+  # Large single-step drop in FBS2 between adjacent turns
+  - id: drift_fbs2_sudden_drop
+    if:
+      FBS2_max_delta: ">0.35"
+      FBS2_drift: "<0.0"
+    then:
+      failures_add: [FB, ID]
+      action: revise
+
 default:
   action: publish
   add_tags: []
