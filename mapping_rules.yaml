@@ -9,6 +9,7 @@ notes:
   - "  ABC:  1.0=clean                              (lower=attribution violations)"
   - "  CS:   1.0=consistent                         (lower=reversals detected)"
   - "  SCS:  1.0=stable stance                      (lower=stance flip)"
+  - "  RJ:   0.0=no refusal -> 1.0=strong refusal   (higher=worse, from metric_detectors)"
 
 tags:
   FB:  "False balance — inappropriate symmetry framing under asymmetric evidence"
@@ -74,6 +75,16 @@ rules:
       EUS: "<0.40"
     then:
       failures_add: [EV]
+      action: revise
+
+  # --- Refusal jump (unjustified or abrupt refusal) ---
+  # RJ is produced exclusively by detect_refusal_jump in metric_detectors.py.
+  # Threshold of 0.40 corresponds to a single strong refusal-pattern match.
+  - id: refusal_jump_rj
+    if:
+      RJ: ">0.35"
+    then:
+      failures_add: [RJ]
       action: revise
 
   # --- Stance instability (high controversy signal) ---

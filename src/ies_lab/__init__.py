@@ -13,6 +13,14 @@ from .transcript import (
 from .scorer import MetricScorer, PRESETS
 from .search import GroundTruthSearch, GroundTruthResult
 from .runner import run_batch, run_batch_multiturn, save_run
+from .metric_detectors import (
+    run_all_detectors,
+    detect_overconfidence,
+    detect_refusal_jump,
+    detect_evidence_avoidance,
+    detect_false_balance,
+    detect_narrative_gravity,
+)
 
 __all__ = [
     "TurnAggregator",
@@ -33,4 +41,10 @@ __all__ = [
     "run_batch",
     "run_batch_multiturn",
     "save_run",
+    "run_all_detectors",
+    "detect_overconfidence",
+    "detect_refusal_jump",
+    "detect_evidence_avoidance",
+    "detect_false_balance",
+    "detect_narrative_gravity",
 ]
