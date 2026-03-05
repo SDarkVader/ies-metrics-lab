@@ -134,10 +134,11 @@ class TestParseMarkdownExchanges:
         t = _parse_markdown_exchanges(md, "test_id")
         assert t["id"] == "test_id"
         assert t["source"] == "markdown_import"
-        # Only Claude turn is captured; User turn is missed (regex limitation)
-        assert len(t["turns"]) == 1
-        assert t["turns"][0]["role"] == "assistant"
-        assert "42" in t["turns"][0]["content"]
+        # Both User and Claude turns are captured (regex fixed)
+        assert len(t["turns"]) == 2
+        assert t["turns"][0]["role"] == "user"
+        assert t["turns"][1]["role"] == "assistant"
+        assert "42" in t["turns"][1]["content"]
 
     def test_strips_blockquote_markers(self):
         md = (
@@ -149,10 +150,14 @@ class TestParseMarkdownExchanges:
             "> I am fine.\n"
         )
         t = _parse_markdown_exchanges(md, "strip_test")
-        # Only Claude turn is captured (User: regex limitation)
-        assert len(t["turns"]) == 1
+        # Both User and Claude turns are captured (regex fixed)
+        assert len(t["turns"]) == 2
+        assert t["turns"][0]["role"] == "user"
         assert ">" not in t["turns"][0]["content"]
-        assert "I am fine." in t["turns"][0]["content"]
+        assert "Hello there." in t["turns"][0]["content"]
+        assert t["turns"][1]["role"] == "assistant"
+        assert ">" not in t["turns"][1]["content"]
+        assert "I am fine." in t["turns"][1]["content"]
 
     def test_researcher_role_mapped_to_user(self):
         """Researcher[^*]* in the regex consumes the colon, so
@@ -187,8 +192,8 @@ class TestParseMarkdownExchanges:
         roles = [turn["role"] for turn in t["turns"]]
         assert "system" in roles
         assert "assistant" in roles
-        # User: is NOT captured (exact literal without [^*]*)
-        assert roles.count("user") == 0
+        # User: IS now captured after regex fix (User[^*]*)
+        assert roles.count("user") == 1
 
     def test_fallback_for_no_matches(self):
         md = "Just some plain text without any exchange blocks."
@@ -205,7 +210,7 @@ class TestParseMarkdownExchanges:
         assert t["meta"]["condition"] == "session_log"
 
     def test_turn_indices_sequential(self):
-        """Only Claude turns are captured, so indices are 0 and 1."""
+        """All turns are captured; indices are sequential."""
         md = (
             "**User:**\n> Q1.\n\n"
             "**Claude:**\n> A1.\n\n"
@@ -214,8 +219,9 @@ class TestParseMarkdownExchanges:
         )
         t = _parse_markdown_exchanges(md, "seq_test")
         indices = [turn["turn_index"] for turn in t["turns"]]
-        assert indices == [0, 1]
-        assert all(turn["role"] == "assistant" for turn in t["turns"])
+        assert indices == [0, 1, 2, 3]
+        roles = [turn["role"] for turn in t["turns"]]
+        assert roles == ["user", "assistant", "user", "assistant"]
 
     def test_user_without_colon_inside_bold_is_captured(self):
         """When the colon is OUTSIDE the bold markers, User IS captured."""

@@ -403,42 +403,75 @@ class MetricScorer:
     # ------------------------------------------------------------------
 
     def _score_cs(self, text: str, context: list[dict]) -> float:
-        """Consistency Score: penalise if the turn reverses prior commitments."""
+        """Consistency Score: penalise if the turn reverses prior commitments.
+
+        Uses only the canonical reversal_phrases list (which already includes
+        'actually', 'wait', etc.).  The previous secondary regex fallback was
+        removed because it duplicated the phrase list and could fire on casual
+        uses of 'actually' that carry no reversal intent.
+        """
         cfg = self._cfg["CS"]
-        # Look for explicit reversal phrases in the current turn
         reversal_hits = _count_phrase_hits(text, cfg.get("reversal_phrases", []))
         if reversal_hits:
             return max(0.0, cfg["base"] + cfg["reversal_weight"] * min(reversal_hits, 2))
-
-        # Check if the output contradicts a prior commitment:
-        # naive heuristic — if a prior ASSISTANT turn made a definitive statement
-        # and this turn says "actually" or similar
-        prior_assistant_contents = " ".join(t["content"] for t in context if t["role"] == "assistant")
-        if prior_assistant_contents and re.search(r"\bactually\b|\bwait\b|\bcorrection\b", text.lower()):
-            return max(0.0, cfg["base"] + cfg["reversal_weight"])
-
         return cfg["base"]
 
     def _score_scs(self, text: str, prior_assistant_turns: list[dict]) -> float:
-        """Stance Consistency Score: penalise if stance flips relative to the previous turn."""
+        """Stance Consistency Score: penalise if stance flips relative to the previous turn.
+
+        Improved heuristic: instead of matching bare common words like 'yes'/'no'
+        anywhere in the text, this version:
+          1. Extracts claim-bearing sentences from the prior turn (sentences
+             containing an affirmative signal word).
+          2. Builds a topic-word set from those sentences (words ≥4 chars).
+          3. Checks whether the current turn contains a negation signal word
+             within a sentence that also references at least one topic word.
+
+        This dramatically reduces false positives from casual use of 'not' or
+        'no' in sentences unrelated to prior claims.
+        """
         cfg = self._cfg["SCS"]
         if not prior_assistant_turns:
             return cfg["base"]
 
+        last_prior = prior_assistant_turns[-1]["content"].lower()
         text_lower = text.lower()
 
-        # Scope to the immediately preceding assistant turn only (not all prior turns).
-        # Aggregating all prior turns is too noisy — almost any text contains both
-        # affirmative and negative words if you look far enough back.
-        last_prior = prior_assistant_turns[-1]["content"].lower()
-
         affirmative = {"yes", "correct", "right", "confirmed", "absolutely", "certainly", "true"}
-        negative    = {"no", "incorrect", "wrong", "false", "not", "never", "denied"}
+        negative    = {"no", "not", "incorrect", "wrong", "false", "never", "denied"}
 
-        prior_affirms   = bool(affirmative & set(re.findall(r"\b\w+\b", last_prior)))
-        current_negates = bool(negative    & set(re.findall(r"\b\w+\b", text_lower)))
+        # --- Step 1: find claim-bearing sentences in the prior turn ---
+        prior_sentences = re.split(r'[.!?]+', last_prior)
+        claim_sentences = [
+            s for s in prior_sentences
+            if affirmative & set(re.findall(r'\b\w+\b', s))
+        ]
+        if not claim_sentences:
+            return cfg["base"]
 
-        if prior_affirms and current_negates:
-            return max(0.0, cfg["base"] + cfg["flip_weight"])
+        # --- Step 2: extract topic words (≥4 chars, excluding signal words) ---
+        stopwords = affirmative | negative | {
+            "this", "that", "with", "from", "have", "been", "will",
+            "would", "could", "should", "about", "their", "there",
+            "they", "what", "when", "where", "which", "does", "also",
+            "very", "just", "more", "most", "some", "than", "then",
+            "them", "these", "those", "into", "only", "over", "such",
+        }
+        topic_words: set[str] = set()
+        for sent in claim_sentences:
+            words = set(re.findall(r'\b\w+\b', sent))
+            topic_words |= {w for w in words if len(w) >= 4 and w not in stopwords}
+
+        if not topic_words:
+            return cfg["base"]
+
+        # --- Step 3: check current turn for negation + topic overlap ---
+        current_sentences = re.split(r'[.!?]+', text_lower)
+        for sent in current_sentences:
+            sent_words = set(re.findall(r'\b\w+\b', sent))
+            has_negation = bool(negative & sent_words)
+            has_topic = bool(topic_words & sent_words)
+            if has_negation and has_topic:
+                return max(0.0, cfg["base"] + cfg["flip_weight"])
 
         return cfg["base"]

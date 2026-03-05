@@ -132,7 +132,7 @@ def _parse_markdown_exchanges(text: str, source_id: str) -> dict:
 
     # Match **Role:** followed by blockquote lines
     pattern = re.compile(
-        r'\*\*(User|Claude[^*]*|System[^*]*|Researcher[^*]*|Dark\^?Vader[^*]*)\*\*:?\s*\n((?:>.*\n?)+)',
+        r'\*\*(User[^*]*|Claude[^*]*|System[^*]*|Researcher[^*]*|Dark\^?Vader[^*]*)\*\*:?\s*\n((?:>.*\n?)+)',
         re.IGNORECASE | re.MULTILINE,
     )
 

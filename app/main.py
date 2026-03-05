@@ -11,15 +11,28 @@ Run (from repo root):
     uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
 Then open http://<your-machine-ip>:8080 from any device on the same network.
+
+Environment variables
+---------------------
+IES_ALLOWED_ORIGINS  Comma-separated list of allowed CORS origins.
+                     Defaults to ``*`` (all origins) for local development.
+                     Example: ``https://example.com,https://app.example.com``
+
+IES_MAX_TEXT_CHARS   Maximum character count accepted by ``/api/audit`` for
+                     the ``text`` field.  Defaults to 500 000 (~500 KB).
+
+IES_MAX_FILE_BYTES   Maximum file size in bytes accepted by ``/api/audit``
+                     for file uploads.  Defaults to 2 000 000 (2 MB).
 """
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,6 +53,19 @@ _TRANSCRIPTS_DIR = _REPO_ROOT / "transcripts"
 _STATIC_DIR      = Path(__file__).parent / "static"
 
 # ---------------------------------------------------------------------------
+# Configuration from environment
+# ---------------------------------------------------------------------------
+
+_MAX_TEXT_CHARS: int = int(os.environ.get("IES_MAX_TEXT_CHARS", "500000"))
+_MAX_FILE_BYTES: int = int(os.environ.get("IES_MAX_FILE_BYTES", "2000000"))
+
+_ALLOWED_ORIGINS: list[str] = [
+    origin.strip()
+    for origin in os.environ.get("IES_ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
+# ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
 
@@ -47,7 +73,7 @@ app = FastAPI(title="IES Metrics Lab", version="0.1.0", docs_url="/api/docs")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -92,6 +118,10 @@ async def api_audit(
 
     Supply either a file upload (file=) or raw transcript text (text=).
     Returns the markdown report plus the structured evidence record.
+
+    Input size limits are enforced to prevent denial-of-service:
+    - ``text``: max ``IES_MAX_TEXT_CHARS`` characters (default 500 000)
+    - ``file``: max ``IES_MAX_FILE_BYTES`` bytes (default 2 MB)
     """
     if preset not in ("default", "strict", "lenient"):
         raise HTTPException(status_code=400, detail=f"Unknown preset '{preset}'")
@@ -99,11 +129,26 @@ async def api_audit(
     tmp_path: Path | None = None
     try:
         if file is not None:
+            # Read file with size guard
+            content = await file.read()
+            if len(content) > _MAX_FILE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large ({len(content):,} bytes). "
+                           f"Maximum allowed: {_MAX_FILE_BYTES:,} bytes.",
+                )
             suffix = Path(file.filename or "x.txt").suffix or ".txt"
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(await file.read())
+                tmp.write(content)
                 tmp_path = Path(tmp.name)
         elif text:
+            # Text size guard
+            if len(text) > _MAX_TEXT_CHARS:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Text too large ({len(text):,} chars). "
+                           f"Maximum allowed: {_MAX_TEXT_CHARS:,} characters.",
+                )
             with tempfile.NamedTemporaryFile(
                 suffix=".txt", delete=False, mode="w", encoding="utf-8"
             ) as tmp:
@@ -135,10 +180,26 @@ async def api_audit(
 
 
 @app.get("/api/batch")
-async def api_batch(preset: str = "default") -> list[dict[str, Any]]:
-    """Run the full evaluation pipeline on the bundled transcripts/ directory."""
+async def api_batch(
+    preset: str = Query(default="default"),
+    limit:  int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> dict[str, Any]:
+    """Run the full evaluation pipeline on the bundled transcripts/ directory.
+
+    Supports pagination via ``limit`` and ``offset`` query parameters.
+    Returns a dict with ``results`` (the page), ``total`` (total count),
+    ``limit``, and ``offset`` for the client to paginate through.
+    """
     if preset not in ("default", "strict", "lenient"):
         raise HTTPException(status_code=400, detail=f"Unknown preset '{preset}'")
     scorer  = MetricScorer(preset=preset)
-    results = run_batch(_TRANSCRIPTS_DIR, _RULES_PATH, scorer)
-    return results
+    all_results = run_batch(_TRANSCRIPTS_DIR, _RULES_PATH, scorer)
+    total = len(all_results)
+    page = all_results[offset : offset + limit]
+    return {
+        "results": page,
+        "total":   total,
+        "limit":   limit,
+        "offset":  offset,
+    }
