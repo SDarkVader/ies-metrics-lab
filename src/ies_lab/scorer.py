@@ -3,6 +3,24 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+# ---------------------------------------------------------------------------
+# Negation guard configuration
+# ---------------------------------------------------------------------------
+
+#: Tokens that, when found within NEGATION_WINDOW positions immediately before
+#: a phrase match, indicate the phrase is being negated and the hit should be
+#: suppressed.  Extend this set to cover additional negation patterns.
+NEGATION_TOKENS: frozenset[str] = frozenset({
+    "not", "no", "never", "isn't", "isnt", "doesn't", "doesnt",
+    "don't", "dont", "cannot", "can't", "cant", "won't", "wont",
+    "without", "neither", "nor", "hardly", "barely", "scarcely",
+})
+
+#: Number of whitespace-delimited tokens to look back before a phrase match
+#: when checking for negation.  5 covers the most common patterns, e.g.
+#: "this is not a both-sides issue" (3 tokens before "both").
+NEGATION_WINDOW: int = 5
+
 if TYPE_CHECKING:
     from .search import GroundTruthSearch
 
@@ -194,9 +212,40 @@ PRESETS: dict[str, dict] = {
 }
 
 
-def _count_phrase_hits(text: str, phrases: list[str]) -> int:
+def _count_phrase_hits(
+    text: str,
+    phrases: list[str],
+    negate: bool = True,
+) -> int:
+    """Count how many phrases from *phrases* appear in *text*.
+
+    When *negate* is True (the default), a phrase hit is suppressed if any
+    token in NEGATION_TOKENS appears within the NEGATION_WINDOW tokens
+    immediately preceding the match position.  This prevents false positives
+    such as "this is not a both-sides issue" triggering an FBS2 penalty.
+
+    Setting *negate=False* disables the guard and restores the original
+    substring-count behaviour.
+    """
     text_lower = text.lower()
-    return sum(1 for p in phrases if p in text_lower)
+    count = 0
+    for phrase in phrases:
+        start = 0
+        while True:
+            idx = text_lower.find(phrase, start)
+            if idx == -1:
+                break
+            if negate:
+                # Tokenise only the prefix up to the match to find preceding words
+                prefix_tokens = text_lower[:idx].split()
+                window_tokens = prefix_tokens[-NEGATION_WINDOW:]
+                if NEGATION_TOKENS.intersection(window_tokens):
+                    # Phrase is negated — skip this occurrence
+                    start = idx + 1
+                    continue
+            count += 1
+            start = idx + 1
+    return count
 
 
 def _apply_phrase_adjustments(base: float, text: str, groups: list[dict]) -> float:
