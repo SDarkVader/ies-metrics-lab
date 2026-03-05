@@ -1,3 +1,20 @@
+"""DEPRECATED — do not use in new code.
+
+This module defined an alternative rule-evaluation system (``apply_rules`` /
+``when`` / ``when_all``) that was never wired into the production pipeline.
+It is retained here for reference only and will be removed in a future release.
+
+Use :class:`ies_lab.engine.EvaluationEngine` instead, which now supports both
+the original flat ``if:`` format and the compound ``if_all:`` list format.
+"""
+import warnings
+warnings.warn(
+    "ies_lab.mapping is deprecated and will be removed in a future release. "
+    "Use ies_lab.engine.EvaluationEngine instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
