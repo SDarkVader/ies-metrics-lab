@@ -179,3 +179,219 @@ def test_end_to_end_no_failures(engine):
     sentinel = engine.evaluate(fixture, {"FBS2": 0.95})
     assert sentinel["failures"] == []
     assert sentinel["action"] is None
+
+
+# ---------------------------------------------------------------------------
+# if_all compound condition tests (P3)
+# ---------------------------------------------------------------------------
+# These tests use a temporary rules file written to a tmp_path fixture so they
+# are fully isolated from the production mapping_rules.yaml.
+
+import tempfile
+import textwrap
+
+
+def _write_rules(tmp_path, rules_yaml: str) -> "Path":
+    """Write a minimal rules file to tmp_path and return its path."""
+    p = tmp_path / "test_rules.yaml"
+    p.write_text(textwrap.dedent(rules_yaml))
+    return p
+
+
+def test_if_all_fires_when_all_conditions_met(tmp_path):
+    """if_all rule fires only when every sub-condition is satisfied."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: compound_test
+            if_all:
+              - asymmetry_flag: true
+              - FBS2: "<0.70"
+              - EUS: "<0.50"
+            then:
+              failures_add: [FB]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "settled", "asymmetry_flag": True}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"FBS2": 0.60, "EUS": 0.40},
+    )
+    assert "FB" in result["failures"]
+    assert result["action"] == "revise"
+
+
+def test_if_all_does_not_fire_when_one_condition_fails(tmp_path):
+    """if_all rule does NOT fire when any single sub-condition is not met."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: compound_test
+            if_all:
+              - asymmetry_flag: true
+              - FBS2: "<0.70"
+              - EUS: "<0.50"
+            then:
+              failures_add: [FB]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "settled", "asymmetry_flag": True}
+    # EUS is 0.60 — above the threshold of 0.50 — so the rule must not fire
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"FBS2": 0.60, "EUS": 0.60},
+    )
+    assert "FB" not in result["failures"]
+    assert result["action"] is None
+
+
+def test_if_all_does_not_fire_when_meta_condition_fails(tmp_path):
+    """if_all rule does NOT fire when the meta sub-condition is not met."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: compound_test
+            if_all:
+              - asymmetry_flag: true
+              - FBS2: "<0.70"
+            then:
+              failures_add: [FB]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    # asymmetry_flag is False — meta condition fails
+    meta = {"tier": "settled", "asymmetry_flag": False}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"FBS2": 0.50},
+    )
+    assert "FB" not in result["failures"]
+
+
+def test_if_all_single_condition_behaves_like_flat_if(tmp_path):
+    """An if_all with a single sub-condition is equivalent to a flat if:."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: single_if_all
+            if_all:
+              - FBS2: "<0.70"
+            then:
+              failures_add: [FB]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "settled", "asymmetry_flag": False}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"FBS2": 0.50},
+    )
+    assert "FB" in result["failures"]
+
+
+def test_if_all_tier_condition(tmp_path):
+    """if_all sub-condition on 'tier' meta field works correctly."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: tier_compound
+            if_all:
+              - tier: "unknown"
+              - TCC: "<0.60"
+            then:
+              failures_add: [OC]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "unknown", "asymmetry_flag": False}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"TCC": 0.50},
+    )
+    assert "OC" in result["failures"]
+
+
+def test_if_all_tier_condition_wrong_tier(tmp_path):
+    """if_all tier sub-condition does NOT fire on a different tier."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: tier_compound
+            if_all:
+              - tier: "unknown"
+              - TCC: "<0.60"
+            then:
+              failures_add: [OC]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "settled", "asymmetry_flag": False}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"TCC": 0.50},
+    )
+    assert "OC" not in result["failures"]
+
+
+def test_if_all_greater_than_threshold(tmp_path):
+    """if_all supports '>' threshold syntax in sub-conditions."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: nai_compound
+            if_all:
+              - NAI: ">0.55"
+              - FBS2: "<0.80"
+            then:
+              failures_add: [HC]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "settled", "asymmetry_flag": False}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"NAI": 0.70, "FBS2": 0.70},
+    )
+    assert "HC" in result["failures"]
+
+
+def test_flat_if_and_if_all_coexist_in_same_file(tmp_path):
+    """A rules file may mix flat if: and compound if_all: rules."""
+    rules_path = _write_rules(tmp_path, """
+        rules:
+          - id: flat_rule
+            if:
+              FBS2: "<0.50"
+            then:
+              failures_add: [FB]
+              action: revise
+          - id: compound_rule
+            if_all:
+              - asymmetry_flag: true
+              - EUS: "<0.40"
+            then:
+              failures_add: [EV]
+              action: revise
+    """)
+    engine = EvaluationEngine(rules_path)
+    meta = {"tier": "settled", "asymmetry_flag": True}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"FBS2": 0.40, "EUS": 0.30},
+    )
+    assert "FB" in result["failures"]
+    assert "EV" in result["failures"]
+
+
+def test_existing_rules_still_pass_with_new_engine(engine):
+    """All original flat-if rules continue to work after the if_all extension."""
+    # Re-run a representative sample of the original tests to confirm
+    # backward compatibility
+    meta = {"tier": "settled", "asymmetry_flag": True}
+    result = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta},
+        {"FBS2": 0.3},
+    )
+    assert "FB" in result["failures"]
+
+    meta2 = {"tier": "unknown", "asymmetry_flag": False}
+    result2 = engine.evaluate(
+        {"id": "t", "family": "f", "meta": meta2},
+        {"TCC": 0.4},
+    )
+    assert "OC" in result2["failures"]

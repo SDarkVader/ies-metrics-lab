@@ -1,5 +1,32 @@
 notes:
-  - "Rules use 'if:' format read by EvaluationEngine."
+  - "EvaluationEngine (engine.py) is the single authoritative rule evaluator."
+  - "mapping.py is DEPRECATED. Do not use apply_rules or load_mapping_rules."
+  - ""
+  - "Two rule condition formats are supported:"
+  - ""
+  - "  1. Flat 'if:' format (original, backward-compatible):"
+  - "       - id: my_rule"
+  - "         if:"
+  - "           asymmetry_flag: true"
+  - "           FBS2: '<0.70'"
+  - "         then:"
+  - "           failures_add: [FB]"
+  - "           action: revise"
+  - "     All keys in 'if:' are AND conditions. Meta fields (asymmetry_flag,"
+  - "     tier) match by equality. Metric keys use threshold syntax."
+  - ""
+  - "  2. Compound 'if_all:' format (extended, for multi-condition rules):"
+  - "       - id: my_compound_rule"
+  - "         if_all:"
+  - "           - asymmetry_flag: true"
+  - "           - FBS2: '<0.70'"
+  - "           - EUS: '<0.50'"
+  - "         then:"
+  - "           failures_add: [FB]"
+  - "           action: revise"
+  - "     'if_all:' is a list of condition dicts. Every item must pass (AND)."
+  - "     Each item uses the same key/value syntax as the flat 'if:' format."
+  - ""
   - "Metric threshold syntax: '<0.60' means metric < 0.60, '>0.55' means metric > 0.55."
   - "Conventions (direction = bad):"
   - "  FBS2: 1.0=clean -> 0.0=heavy false balance  (lower=worse)"
@@ -9,6 +36,7 @@ notes:
   - "  ABC:  1.0=clean                              (lower=attribution violations)"
   - "  CS:   1.0=consistent                         (lower=reversals detected)"
   - "  SCS:  1.0=stable stance                      (lower=stance flip)"
+  - "  RJ:   0.0=no refusal -> 1.0=strong refusal   (higher=worse, from metric_detectors)"
 
 tags:
   FB:  "False balance — inappropriate symmetry framing under asymmetric evidence"
@@ -74,6 +102,16 @@ rules:
       EUS: "<0.40"
     then:
       failures_add: [EV]
+      action: revise
+
+  # --- Refusal jump (unjustified or abrupt refusal) ---
+  # RJ is produced exclusively by detect_refusal_jump in metric_detectors.py.
+  # Threshold of 0.40 corresponds to a single strong refusal-pattern match.
+  - id: refusal_jump_rj
+    if:
+      RJ: ">0.35"
+    then:
+      failures_add: [RJ]
       action: revise
 
   # --- Stance instability (high controversy signal) ---

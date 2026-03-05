@@ -1,11 +1,11 @@
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 
 def create_run_dir(base="runs"):
 
-    timestamp = datetime.utcnow().strftime("%Y-%m-%d_%H-%M-%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
 
     run_dir = Path(base) / timestamp
     run_dir.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,25 @@
+"""Batch scoring and single-transcript scoring helpers for IES Metrics Lab.
+
+The canonical per-transcript scoring logic lives in
+:func:`score_single_transcript`.  Both the batch functions in this module
+and :mod:`tools.audit_session` delegate to it so that any fix to the
+scoring loop only needs to be made in one place.
+
+Public API
+----------
+score_single_transcript(transcript, engine, scorer) → dict
+    Score every assistant turn of a single transcript and apply rules.
+    Returns an enriched sentinel dict.
+
+run_batch(transcripts_dir, rules_path, scorer) → list[dict]
+    Score every transcript in a directory.  Returns one sentinel per transcript.
+
+run_batch_multiturn(transcripts_dir, rules_path, scorer) → list[dict]
+    Score every transcript in a directory.  Returns one sentinel per turn.
+
+save_run(results, output_dir) → Path
+    Write results to a timestamped JSON file.
+"""
 from __future__ import annotations
 
 import json
@@ -10,6 +32,110 @@ from .engine import EvaluationEngine
 from .scorer import MetricScorer
 from .transcript import load_all_transcripts, to_fixture_shape, get_assistant_turns
 
+
+# ---------------------------------------------------------------------------
+# Shared per-transcript scoring helper
+# ---------------------------------------------------------------------------
+
+def score_single_transcript(
+    transcript: dict,
+    engine: EvaluationEngine,
+    scorer: MetricScorer,
+) -> dict[str, Any]:
+    """Score every assistant turn of *transcript* and apply *engine* rules.
+
+    This is the single authoritative implementation of the per-transcript
+    scoring loop.  Both :func:`run_batch` and :mod:`tools.audit_session`
+    delegate to this function.
+
+    Parameters
+    ----------
+    transcript:
+        An IES transcript dict with ``id``, ``turns``, and ``meta`` keys.
+    engine:
+        A configured :class:`~ies_lab.engine.EvaluationEngine`.
+    scorer:
+        A configured :class:`~ies_lab.scorer.MetricScorer`.
+
+    Returns
+    -------
+    dict
+        An enriched sentinel dict containing:
+
+        ``metric_scores``
+            Raw metric scores for the *last* assistant turn.
+        ``per_turn_scores``
+            List of score dicts, one per assistant turn in order.
+        ``per_turn_sentinels``
+            List of per-turn sentinel dicts (failures + action per turn).
+        ``running_means``
+            Cumulative mean of each metric after each turn.
+        ``drift_stats``
+            Per-metric divergence statistics (mean/std/drift/max_delta).
+        ``transcript_id``
+            The transcript's ``id`` field.
+        ``condition``
+            ``meta.condition`` or empty string.
+        ``session_failures``
+            Sorted union of all failure tags across all turns.
+        ``session_action``
+            Worst action seen across all turns
+            (``escalate`` > ``revise`` > ``publish``).
+    """
+    fixture          = to_fixture_shape(transcript)
+    all_turn_results = scorer.score_all_turns(transcript)
+    turn_score_list  = [t["scores"] for t in all_turn_results]
+
+    aggregates   = TurnAggregator.compute(turn_score_list)
+    last_scores  = turn_score_list[-1] if turn_score_list else {}
+    drift_scores = TurnAggregator.drift_scores(aggregates["per_metric"])
+
+    # Per-turn sentinels (failures + action for each individual turn)
+    per_turn_sentinels: list[dict] = []
+    all_failure_sets: list[set]    = []
+    for turn_result in all_turn_results:
+        s = engine.evaluate(fixture, turn_result["scores"])
+        per_turn_sentinels.append({
+            "turn_index": turn_result["turn_index"],
+            "content":    turn_result.get("content", ""),
+            "scores":     turn_result["scores"],
+            "failures":   s["failures"],
+            "action":     s["action"],
+        })
+        all_failure_sets.append(set(s["failures"]))
+
+    # Session-level aggregation
+    session_failures = sorted(set().union(*all_failure_sets)) if all_failure_sets else []
+    action_priority  = {"escalate": 2, "revise": 1, "publish": 0, None: 0}
+    session_action   = max(
+        (r["action"] for r in per_turn_sentinels),
+        key=lambda a: action_priority.get(a, 0),
+        default=None,
+    )
+
+    # Session-level sentinel (rules applied against last turn + drift scores)
+    sentinel = engine.evaluate(fixture, {**last_scores, **drift_scores})
+
+    # Restore metric_scores to only the last-turn base metrics so downstream
+    # consumers and tests see the familiar structure.
+    sentinel["metric_scores"] = last_scores
+
+    # Enrichment
+    sentinel["transcript_id"]     = transcript["id"]
+    sentinel["condition"]          = transcript["meta"].get("condition", "")
+    sentinel["per_turn_scores"]    = turn_score_list
+    sentinel["per_turn_sentinels"] = per_turn_sentinels
+    sentinel["running_means"]      = aggregates["running_means"]
+    sentinel["drift_stats"]        = aggregates["per_metric"]
+    sentinel["session_failures"]   = session_failures
+    sentinel["session_action"]     = session_action
+
+    return sentinel
+
+
+# ---------------------------------------------------------------------------
+# Batch runners
+# ---------------------------------------------------------------------------
 
 def run_batch(
     transcripts_dir: Path,
@@ -34,33 +160,12 @@ def run_batch(
       drift_stats       — per_metric divergence stats (mean/std/drift/max_delta)
     """
     transcripts_dir = Path(transcripts_dir)
-    rules_path = Path(rules_path)
-
-    engine = EvaluationEngine(rules_path)
+    rules_path      = Path(rules_path)
+    engine          = EvaluationEngine(rules_path)
     results: list[dict[str, Any]] = []
 
     for transcript in load_all_transcripts(transcripts_dir):
-        all_turn_results = scorer.score_all_turns(transcript)
-        turn_score_list   = [t["scores"] for t in all_turn_results]
-
-        aggregates   = TurnAggregator.compute(turn_score_list)
-        last_scores  = turn_score_list[-1] if turn_score_list else {}
-        drift_scores = TurnAggregator.drift_scores(aggregates["per_metric"])
-
-        fixture  = to_fixture_shape(transcript)
-        sentinel = engine.evaluate(fixture, {**last_scores, **drift_scores})
-
-        # Restore metric_scores to only the 7 base metrics (last turn) so
-        # downstream consumers and tests see the familiar structure.
-        sentinel["metric_scores"] = last_scores
-
-        # Enrichment
-        sentinel["transcript_id"]   = transcript["id"]
-        sentinel["condition"]        = transcript["meta"].get("condition", "")
-        sentinel["per_turn_scores"]  = turn_score_list
-        sentinel["running_means"]    = aggregates["running_means"]
-        sentinel["drift_stats"]      = aggregates["per_metric"]
-
+        sentinel = score_single_transcript(transcript, engine, scorer)
         results.append(sentinel)
 
     return results
@@ -80,9 +185,8 @@ def run_batch_multiturn(
       running_mean   — cumulative mean of each metric up to and including this turn
     """
     transcripts_dir = Path(transcripts_dir)
-    rules_path = Path(rules_path)
-
-    engine = EvaluationEngine(rules_path)
+    rules_path      = Path(rules_path)
+    engine          = EvaluationEngine(rules_path)
     results: list[dict[str, Any]] = []
 
     for transcript in load_all_transcripts(transcripts_dir):
@@ -103,6 +207,10 @@ def run_batch_multiturn(
 
     return results
 
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
 
 def save_run(results: list[dict[str, Any]], output_dir: Path) -> Path:
     """Write results to a timestamped JSON file in output_dir. Returns the file path."""

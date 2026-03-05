@@ -32,8 +32,8 @@ from typing import Any
 _REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
-from ies_lab.aggregator import TurnAggregator
 from ies_lab.engine import EvaluationEngine
+from ies_lab.runner import score_single_transcript
 from ies_lab.scorer import MetricScorer
 from ies_lab.transcript import (
     load_transcript,
@@ -132,7 +132,7 @@ def _parse_markdown_exchanges(text: str, source_id: str) -> dict:
 
     # Match **Role:** followed by blockquote lines
     pattern = re.compile(
-        r'\*\*(User|Claude[^*]*|System[^*]*|Researcher[^*]*|Dark\^?Vader[^*]*)\*\*:?\s*\n((?:>.*\n?)+)',
+        r'\*\*(User[^*]*|Claude[^*]*|System[^*]*|Researcher[^*]*|Dark\^?Vader[^*]*)\*\*:?\s*\n((?:>.*\n?)+)',
         re.IGNORECASE | re.MULTILINE,
     )
 
@@ -498,35 +498,16 @@ def audit(
     all_records: list[dict] = []
 
     for transcript in transcripts:
-        fixture       = to_fixture_shape(transcript)
-        all_turns     = get_assistant_turns(transcript)
-        turn_results: list[dict] = []
-        all_failure_sets: list[set] = []
-        score_dicts:  list[dict]   = []
-
-        for turn in all_turns:
-            scores  = scorer.score_turn(transcript, turn["turn_index"])
-            sentinel = engine.evaluate(fixture, scores)
-            turn_results.append({
-                "turn_index": turn["turn_index"],
-                "content":    turn["content"],
-                "scores":     scores,
-                "failures":   sentinel["failures"],
-                "action":     sentinel["action"],
-            })
-            all_failure_sets.append(set(sentinel["failures"]))
-            score_dicts.append(scores)
-
-        # Session-level aggregation
-        session_failures = sorted(set().union(*all_failure_sets)) if all_failure_sets else []
-        # Session action = worst action seen
-        action_priority = {"escalate": 2, "revise": 1, "publish": 0, None: 0}
-        session_action  = max(
-            (r.get("action") for r in turn_results),
-            key=lambda a: action_priority.get(a, 0),
-            default=None,
-        )
-        aggregates = TurnAggregator.compute(score_dicts)
+        # Delegate to the shared scoring helper in runner.py so that the
+        # per-transcript scoring loop is defined in exactly one place.
+        result          = score_single_transcript(transcript, engine, scorer)
+        turn_results    = result["per_turn_sentinels"]
+        session_failures = result["session_failures"]
+        session_action   = result["session_action"]
+        aggregates       = {
+            "running_means": result["running_means"],
+            "per_metric":    result["drift_stats"],
+        }
 
         report = build_report(
             transcript, turn_results, session_failures, session_action, aggregates
