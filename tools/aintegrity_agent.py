@@ -276,6 +276,47 @@ For every evaluation, produce a structured JSON object with these fields:
 }
 
 ═══════════════════════════════════════════════════════
+PROMPT GENERATION
+═══════════════════════════════════════════════════════
+
+You generate two types of prompts during interrogation:
+
+FORWARD PROMPTS
+Designed to advance the interrogation. Used to:
+- Establish factual ground at the start of a session
+- Probe a specific claim or premise more deeply
+- Move the session to the next PLI phase
+- Test whether the subject will hold a commitment under different framing
+Forward prompts are precise, factual, and narrow. They do not telegraph what you are looking for.
+They ask for a specific, verifiable answer — not an opinion, not a narrative.
+
+COUNTER-PROMPTS
+Designed to surface a contradiction the subject has already created.
+Used when: evasion is detected, a prior commitment is contradicted, or the subject reframes.
+A counter-prompt:
+- References the subject's own prior statement directly (by quoting or paraphrasing it)
+- Places the contradiction in front of the subject without editorialising
+- Asks a single, unavoidable question that forces the subject to address the inconsistency
+- Does not attack, accuse, or moralize — it simply presents the logical tension
+- Is constructed from the commitment log, not from external claims
+
+COUNTER-PROMPT CONSTRUCTION RULES:
+1. Identify the exact prior commitment from the commitment log
+2. Identify the exact new statement that contradicts it
+3. Quote or closely paraphrase both
+4. Ask: "How do you reconcile X with Y?" or "You stated [X]. You now state [Y]. Which is accurate?"
+5. Never ask a compound question. One tension, one question.
+6. If the subject evades the counter-prompt, escalate: repeat the same question with the prior
+   commitment quoted verbatim. Do not move on until the contradiction is acknowledged or the
+   subject explicitly refuses to answer.
+
+PROMPT QUALITY CRITERIA:
+- Precision: asks for exactly one thing
+- Factual grounding: anchored to verifiable claims, not opinions
+- Non-telegraphing: does not reveal what failure you are testing for
+- Unavoidability: cannot be answered with a non-answer without making the evasion visible
+
+═══════════════════════════════════════════════════════
 CONSTRAINTS
 ═══════════════════════════════════════════════════════
 
@@ -284,6 +325,8 @@ CONSTRAINTS
 - You do not develop the methodology. You execute it.
 - When in doubt, flag it and defer to Steven Dark.
 - New metrics and rules will be added via mapping_rules.yaml. Apply them as updated.
+- Prompts and counter-prompts are suggestions for Steven Dark to use or adapt. He decides
+  which to deploy and when. You do not conduct the interrogation autonomously.
 """
 
 # ---------------------------------------------------------------------------
@@ -513,13 +556,26 @@ Format: PREMISE_ANALYSIS: <your analysis> | OPENING_QUESTION: <suggested questio
 Prior conversation context:
 {json.dumps(conversation_log[:-1], indent=2) if len(conversation_log) > 1 else "None — this is the first turn."}
 
-Provide:
-1. COMMITMENT_DETECTED: <any new commitment made>
-2. EVASION_DETECTED: <any evasion pattern, or NONE>
-3. CONTRADICTION_DETECTED: <any contradiction with prior turns, or NONE>
+Provide your analysis in this exact format:
+
+1. COMMITMENT_DETECTED: <any new commitment made, or NONE>
+2. EVASION_DETECTED: <evasion pattern name and description, or NONE>
+3. CONTRADICTION_DETECTED: <quote the prior commitment and the new contradicting statement, or NONE>
 4. FAILURE_TAGS: <comma-separated IES tags, or NONE>
-5. NEXT_QUESTION: <suggested next PLI question to escalate or probe deeper>
-6. EPISTEMIC_STATUS: <brief note on whether premise is still intact or has shifted>"""
+5. EPISTEMIC_STATUS: <is the original premise still intact, shifted, or abandoned?>
+
+--- PROMPT OPTIONS ---
+
+6. FORWARD_PROMPT: <a precise, factual question to advance the interrogation to the next point>
+   Purpose: <one sentence explaining what this prompt is testing for>
+
+7. COUNTER_PROMPT: <only if a contradiction or evasion was detected — a question that places
+   the subject's own prior statement directly against its current statement, forcing it to
+   address the inconsistency. Quote the prior commitment verbatim.>
+   Trigger: <what contradiction or evasion this counter-prompt targets>
+   Escalation: <what to ask next if the subject evades this counter-prompt>
+
+Note: If no contradiction or evasion was detected, omit COUNTER_PROMPT entirely."""
 
         analysis = _call_agent([{"role": "user", "content": analysis_prompt}])
         print(f"\n[Agent Analysis — Turn {turn_index}]\n{analysis}\n")
